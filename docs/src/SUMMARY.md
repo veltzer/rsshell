@@ -5,3 +5,4 @@
 - [Getting Started](./getting-started.md)
 - [Features](./features.md)
 - [Configuration](./configuration.md)
+- [Platform Limitations](./platform-limitations.md)
