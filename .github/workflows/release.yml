@@ -25,9 +25,6 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: rsshell-macos-aarch64
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            artifact: rsshell-windows-x86_64.exe
 
     runs-on: ${{ matrix.os }}
 
@@ -53,13 +50,8 @@ jobs:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Rename binary (Unix)
-        if: runner.os != 'Windows'
+      - name: Rename binary
         run: cp target/${{ matrix.target }}/release/rsshell ${{ matrix.artifact }}
-
-      - name: Rename binary (Windows)
-        if: runner.os == 'Windows'
-        run: cp target/${{ matrix.target }}/release/rsshell.exe ${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
