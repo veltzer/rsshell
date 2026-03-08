@@ -17,16 +17,52 @@ pub struct Config {
     pub startup: StartupConfig,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize)]
 pub struct PromptConfig {
-    #[serde(default = "default_prompt_format")]
-    pub format: String,
+    #[serde(default = "default_prompt_parts")]
+    pub parts: Vec<PromptPart>,
     #[serde(default)]
     pub show_exit_code: bool,
+    #[serde(default = "default_exit_code_color")]
+    pub exit_code_color: String,
 }
 
-fn default_prompt_format() -> String {
-    "{user}@{host}:{cwd}$ ".to_owned()
+impl Default for PromptConfig {
+    fn default() -> Self {
+        Self {
+            parts: default_prompt_parts(),
+            show_exit_code: false,
+            exit_code_color: default_exit_code_color(),
+        }
+    }
+}
+
+fn default_prompt_parts() -> Vec<PromptPart> {
+    vec![
+        PromptPart { text: "{user}".to_owned(), color: "green".to_owned(), bold: false },
+        PromptPart { text: "@".to_owned(), color: "none".to_owned(), bold: false },
+        PromptPart { text: "{host}".to_owned(), color: "green".to_owned(), bold: false },
+        PromptPart { text: ":".to_owned(), color: "none".to_owned(), bold: false },
+        PromptPart { text: "{cwd}".to_owned(), color: "blue".to_owned(), bold: true },
+        PromptPart { text: "$ ".to_owned(), color: "none".to_owned(), bold: false },
+    ]
+}
+
+fn default_exit_code_color() -> String {
+    "red".to_owned()
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PromptPart {
+    pub text: String,
+    #[serde(default = "default_color")]
+    pub color: String,
+    #[serde(default)]
+    pub bold: bool,
+}
+
+fn default_color() -> String {
+    "none".to_owned()
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -39,10 +75,38 @@ pub struct StartupConfig {
 pub const DEFAULT_CONFIG: &str = r#"# rsshell configuration file
 
 [prompt]
-# Prompt format. Available variables: {user}, {host}, {cwd}, {home}
-format = "{user}@{host}:{cwd}$ "
 # Show the exit code of the last command when non-zero
 show_exit_code = true
+# Color for the exit code indicator (when non-zero)
+exit_code_color = "red"
+
+# Prompt is built from an ordered list of parts.
+# Each part has:
+#   text  - literal text or a variable: {user}, {host}, {cwd}, {git_branch}
+#   color - one of: none, black, red, green, yellow, blue, magenta, cyan, white
+#   bold  - true/false (default: false)
+
+[[prompt.parts]]
+text = "{user}"
+color = "green"
+
+[[prompt.parts]]
+text = "@"
+
+[[prompt.parts]]
+text = "{host}"
+color = "green"
+
+[[prompt.parts]]
+text = ":"
+
+[[prompt.parts]]
+text = "{cwd}"
+color = "blue"
+bold = true
+
+[[prompt.parts]]
+text = "$ "
 
 [aliases]
 # Define command aliases
@@ -87,7 +151,61 @@ pub fn load_config() -> Config {
     }
 }
 
-/// Build the prompt string from the config format.
+/// Map a color name to its ANSI code.
+fn color_code(name: &str) -> Option<&'static str> {
+    match name {
+        "black" => Some("30"),
+        "red" => Some("31"),
+        "green" => Some("32"),
+        "yellow" => Some("33"),
+        "blue" => Some("34"),
+        "magenta" => Some("35"),
+        "cyan" => Some("36"),
+        "white" => Some("37"),
+        _ => None,
+    }
+}
+
+/// Wrap text in ANSI color/bold escape sequences.
+/// Uses \x01 and \x02 markers so rustyline knows these are non-printable.
+fn colorize(text: &str, color: &str, bold: bool) -> String {
+    let code = color_code(color);
+    if code.is_none() && !bold {
+        return text.to_owned();
+    }
+
+    let mut params = Vec::new();
+    if bold {
+        params.push("1");
+    }
+    if let Some(c) = code {
+        params.push(c);
+    }
+    let seq = params.join(";");
+    format!("\x01\x1b[{seq}m\x02{text}\x01\x1b[0m\x02")
+}
+
+/// Expand prompt variables in a text string.
+fn expand_prompt_vars(text: &str, user: &str, host: &str, cwd: &str, git_branch: &str) -> String {
+    text.replace("{user}", user)
+        .replace("{host}", host)
+        .replace("{cwd}", cwd)
+        .replace("{git_branch}", git_branch)
+}
+
+/// Detect the current git branch, or return an empty string if not in a repo.
+fn git_branch() -> String {
+    std::process::Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+        .unwrap_or_default()
+}
+
+/// Build the prompt string from the configured parts.
 pub fn build_prompt(config: &Config, last_exit_code: i32) -> String {
     let user = env::var("USER").unwrap_or_else(|_| "user".to_owned());
     let host = hostname();
@@ -103,18 +221,19 @@ pub fn build_prompt(config: &Config, last_exit_code: i32) -> String {
             }
         })
         .unwrap_or_else(|_| "?".to_owned());
-    // Replace ~ alone (when cwd is exactly home)
     let cwd = if cwd == "~/" { "~".to_owned() } else { cwd };
+    let branch = git_branch();
 
-    let mut prompt = config
-        .prompt
-        .format
-        .replace("{user}", &user)
-        .replace("{host}", &host)
-        .replace("{cwd}", &cwd);
+    let mut prompt = String::new();
 
     if config.prompt.show_exit_code && last_exit_code != 0 {
-        prompt = format!("[{last_exit_code}] {prompt}");
+        let code_text = format!("[{last_exit_code}] ");
+        prompt.push_str(&colorize(&code_text, &config.prompt.exit_code_color, true));
+    }
+
+    for part in &config.prompt.parts {
+        let expanded = expand_prompt_vars(&part.text, &user, &host, &cwd, &branch);
+        prompt.push_str(&colorize(&expanded, &part.color, part.bold));
     }
 
     prompt
@@ -354,5 +473,61 @@ mod tests {
     fn test_parse_empty() {
         assert!(parse_command_line("").is_empty());
         assert!(parse_command_line("   ").is_empty());
+    }
+
+    #[test]
+    fn test_color_code() {
+        assert_eq!(color_code("red"), Some("31"));
+        assert_eq!(color_code("green"), Some("32"));
+        assert_eq!(color_code("blue"), Some("34"));
+        assert_eq!(color_code("none"), None);
+        assert_eq!(color_code(""), None);
+    }
+
+    #[test]
+    fn test_colorize_none() {
+        assert_eq!(colorize("hello", "none", false), "hello");
+    }
+
+    #[test]
+    fn test_colorize_with_color() {
+        let result = colorize("hello", "red", false);
+        assert!(result.contains("\x1b[31m"));
+        assert!(result.contains("hello"));
+        assert!(result.contains("\x1b[0m"));
+    }
+
+    #[test]
+    fn test_colorize_bold() {
+        let result = colorize("hello", "none", true);
+        assert!(result.contains("\x1b[1m"));
+        assert!(result.contains("hello"));
+    }
+
+    #[test]
+    fn test_colorize_bold_and_color() {
+        let result = colorize("hello", "green", true);
+        assert!(result.contains("\x1b[1;32m"));
+        assert!(result.contains("hello"));
+    }
+
+    #[test]
+    fn test_expand_prompt_vars() {
+        assert_eq!(
+            expand_prompt_vars("{user}@{host}", "alice", "box", "/tmp", "main"),
+            "alice@box"
+        );
+        assert_eq!(
+            expand_prompt_vars("{cwd} ({git_branch})", "alice", "box", "~/src", "dev"),
+            "~/src (dev)"
+        );
+    }
+
+    #[test]
+    fn test_default_prompt_config_parses() {
+        let config: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
+        assert!(config.prompt.show_exit_code);
+        assert!(!config.prompt.parts.is_empty());
+        assert_eq!(config.prompt.exit_code_color, "red");
     }
 }
