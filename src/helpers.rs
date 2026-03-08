@@ -42,13 +42,14 @@ impl Default for PromptConfig {
 }
 
 fn default_prompt_parts() -> Vec<PromptPart> {
+    let d = || "none".to_owned();
     vec![
-        PromptPart { text: "{user}".to_owned(), color: "green".to_owned(), bold: false },
-        PromptPart { text: "@".to_owned(), color: "none".to_owned(), bold: false },
-        PromptPart { text: "{host}".to_owned(), color: "green".to_owned(), bold: false },
-        PromptPart { text: ":".to_owned(), color: "none".to_owned(), bold: false },
-        PromptPart { text: "{cwd}".to_owned(), color: "blue".to_owned(), bold: true },
-        PromptPart { text: "$ ".to_owned(), color: "none".to_owned(), bold: false },
+        PromptPart { text: "{user}".to_owned(), color: "green".to_owned(), bg: d(), bold: false, dim: false, italic: false, underline: false, strikethrough: false },
+        PromptPart { text: "@".to_owned(), color: d(), bg: d(), bold: false, dim: false, italic: false, underline: false, strikethrough: false },
+        PromptPart { text: "{host}".to_owned(), color: "green".to_owned(), bg: d(), bold: false, dim: false, italic: false, underline: false, strikethrough: false },
+        PromptPart { text: ":".to_owned(), color: d(), bg: d(), bold: false, dim: false, italic: false, underline: false, strikethrough: false },
+        PromptPart { text: "{cwd}".to_owned(), color: "blue".to_owned(), bg: d(), bold: true, dim: false, italic: false, underline: false, strikethrough: false },
+        PromptPart { text: "$ ".to_owned(), color: d(), bg: d(), bold: false, dim: false, italic: false, underline: false, strikethrough: false },
     ]
 }
 
@@ -61,8 +62,18 @@ pub struct PromptPart {
     pub text: String,
     #[serde(default = "default_color")]
     pub color: String,
+    #[serde(default = "default_color")]
+    pub bg: String,
     #[serde(default)]
     pub bold: bool,
+    #[serde(default)]
+    pub dim: bool,
+    #[serde(default)]
+    pub italic: bool,
+    #[serde(default)]
+    pub underline: bool,
+    #[serde(default)]
+    pub strikethrough: bool,
 }
 
 fn default_color() -> String {
@@ -114,9 +125,31 @@ exit_code_color = "red"
 
 # Prompt is built from an ordered list of parts.
 # Each part has:
-#   text  - literal text or a variable: {user}, {host}, {cwd}, {git_branch}
-#   color - one of: none, black, red, green, yellow, blue, magenta, cyan, white
-#   bold  - true/false (default: false)
+#   text  - literal text or a variable (see below)
+#   color - foreground color (see below)
+#   bg    - background color (see below)
+#   bold, dim, italic, underline, strikethrough - style flags (default: false)
+#
+# Variables:
+#   {user}          - current username
+#   {host}          - hostname
+#   {cwd}           - current working directory (~ for home)
+#   {cwd_basename}  - basename of current directory
+#   {git_branch}    - current git branch (empty if not in a repo)
+#   {git_dirty}     - "dirty" or "clean" (empty if not in a repo)
+#   {git_status}    - "*" if dirty, empty if clean or not in a repo
+#   {git_sha}       - full git commit SHA
+#   {git_sha_short} - short git commit SHA
+#   {git_repo}      - git repository name (top-level directory name)
+#   {date}          - current date (YYYY-MM-DD)
+#   {time}          - current time (HH:MM:SS)
+#   {shell}         - shell name (rsshell)
+#   {newline}       - a newline character
+#   {$}             - a literal "$"
+#
+# Colors: none, black, red, green, yellow, blue, magenta, cyan, white,
+#   bright_black (gray/grey), bright_red, bright_green, bright_yellow,
+#   bright_blue, bright_magenta, bright_cyan, bright_white
 
 [[prompt.parts]]
 text = "{user}"
@@ -191,8 +224,8 @@ pub fn load_config() -> Config {
     }
 }
 
-/// Map a color name to its ANSI code.
-fn color_code(name: &str) -> Option<&'static str> {
+/// Map a foreground color name to its ANSI code.
+fn fg_code(name: &str) -> Option<&'static str> {
     match name {
         "black" => Some("30"),
         "red" => Some("31"),
@@ -202,17 +235,83 @@ fn color_code(name: &str) -> Option<&'static str> {
         "magenta" => Some("35"),
         "cyan" => Some("36"),
         "white" => Some("37"),
+        "bright_black" | "gray" | "grey" => Some("90"),
+        "bright_red" => Some("91"),
+        "bright_green" => Some("92"),
+        "bright_yellow" => Some("93"),
+        "bright_blue" => Some("94"),
+        "bright_magenta" => Some("95"),
+        "bright_cyan" => Some("96"),
+        "bright_white" => Some("97"),
         _ => None,
     }
 }
 
-/// Wrap text in ANSI color/bold escape sequences.
-fn colorize(text: &str, color: &str, bold: bool) -> String {
-    let code = color_code(color);
-    if code.is_none() && !bold {
+/// Map a background color name to its ANSI code.
+fn bg_code(name: &str) -> Option<&'static str> {
+    match name {
+        "black" => Some("40"),
+        "red" => Some("41"),
+        "green" => Some("42"),
+        "yellow" => Some("43"),
+        "blue" => Some("44"),
+        "magenta" => Some("45"),
+        "cyan" => Some("46"),
+        "white" => Some("47"),
+        "bright_black" | "gray" | "grey" => Some("100"),
+        "bright_red" => Some("101"),
+        "bright_green" => Some("102"),
+        "bright_yellow" => Some("103"),
+        "bright_blue" => Some("104"),
+        "bright_magenta" => Some("105"),
+        "bright_cyan" => Some("106"),
+        "bright_white" => Some("107"),
+        _ => None,
+    }
+}
+
+/// Wrap text in ANSI escape sequences for color and style.
+fn colorize(text: &str, part: &PromptPart) -> String {
+    let fg = fg_code(&part.color);
+    let bg = bg_code(&part.bg);
+    let has_style = part.bold || part.dim || part.italic || part.underline || part.strikethrough;
+
+    if fg.is_none() && bg.is_none() && !has_style {
         return text.to_owned();
     }
 
+    let mut params = Vec::new();
+    if part.bold {
+        params.push("1");
+    }
+    if part.dim {
+        params.push("2");
+    }
+    if part.italic {
+        params.push("3");
+    }
+    if part.underline {
+        params.push("4");
+    }
+    if part.strikethrough {
+        params.push("9");
+    }
+    if let Some(c) = fg {
+        params.push(c);
+    }
+    if let Some(c) = bg {
+        params.push(c);
+    }
+    let seq = params.join(";");
+    format!("\x1b[{seq}m{text}\x1b[0m")
+}
+
+/// Wrap text with a simple color + bold (used for exit code display).
+fn colorize_simple(text: &str, color: &str, bold: bool) -> String {
+    let code = fg_code(color);
+    if code.is_none() && !bold {
+        return text.to_owned();
+    }
     let mut params = Vec::new();
     if bold {
         params.push("1");
@@ -224,18 +323,127 @@ fn colorize(text: &str, color: &str, bold: bool) -> String {
     format!("\x1b[{seq}m{text}\x1b[0m")
 }
 
-/// Expand prompt variables in a text string.
-fn expand_prompt_vars(text: &str, user: &str, host: &str, cwd: &str, git_branch: &str) -> String {
-    text.replace("{user}", user)
-        .replace("{host}", host)
-        .replace("{cwd}", cwd)
-        .replace("{git_branch}", git_branch)
+/// Collected prompt variables, computed once per prompt render.
+struct PromptVars {
+    user: String,
+    host: String,
+    cwd: String,
+    cwd_basename: String,
+    git_branch: String,
+    git_dirty: String,
+    git_status: String,
+    git_sha: String,
+    git_sha_short: String,
+    git_repo: String,
+    date: String,
+    time: String,
+    shell: String,
+    newline: String,
+    dollar: String,
 }
 
-/// Detect the current git branch, or return an empty string if not in a repo.
-fn git_branch() -> String {
+impl PromptVars {
+    fn collect() -> Self {
+        let user = env::var("USER").unwrap_or_else(|_| "user".to_owned());
+        let host = hostname();
+        let cwd = env::current_dir()
+            .map(|p| {
+                let home = dirs::home_dir().unwrap_or_default();
+                if let Ok(rest) = p.strip_prefix(&home) {
+                    let s = format!("~/{}", rest.display());
+                    s.trim_end_matches('/').to_owned()
+                } else {
+                    p.display().to_string()
+                }
+            })
+            .unwrap_or_else(|_| "?".to_owned());
+        let cwd = if cwd == "~/" { "~".to_owned() } else { cwd };
+        let cwd_basename = cwd.rsplit('/').next().unwrap_or(&cwd).to_owned();
+
+        let git_branch = git_cmd(&["rev-parse", "--abbrev-ref", "HEAD"]);
+        let in_repo = !git_branch.is_empty();
+
+        let git_dirty = if in_repo {
+            let status = git_cmd(&["status", "--porcelain"]);
+            if status.is_empty() { "clean".to_owned() } else { "dirty".to_owned() }
+        } else {
+            String::new()
+        };
+
+        let git_status = if in_repo {
+            if git_dirty == "dirty" { "*".to_owned() } else { String::new() }
+        } else {
+            String::new()
+        };
+
+        let git_sha = if in_repo {
+            git_cmd(&["rev-parse", "HEAD"])
+        } else {
+            String::new()
+        };
+
+        let git_sha_short = if in_repo {
+            git_cmd(&["rev-parse", "--short", "HEAD"])
+        } else {
+            String::new()
+        };
+
+        let git_repo = if in_repo {
+            git_cmd(&["rev-parse", "--show-toplevel"])
+                .rsplit('/')
+                .next()
+                .unwrap_or("")
+                .to_owned()
+        } else {
+            String::new()
+        };
+
+        let now = chrono_now();
+        let date = now.0;
+        let time = now.1;
+
+        Self {
+            user,
+            host,
+            cwd,
+            cwd_basename,
+            git_branch,
+            git_dirty,
+            git_status,
+            git_sha,
+            git_sha_short,
+            git_repo,
+            date,
+            time,
+            shell: "rsshell".to_owned(),
+            newline: "\n".to_owned(),
+            dollar: "$".to_owned(),
+        }
+    }
+
+    fn expand(&self, text: &str) -> String {
+        text.replace("{user}", &self.user)
+            .replace("{host}", &self.host)
+            .replace("{cwd}", &self.cwd)
+            .replace("{cwd_basename}", &self.cwd_basename)
+            .replace("{git_branch}", &self.git_branch)
+            .replace("{git_dirty}", &self.git_dirty)
+            .replace("{git_status}", &self.git_status)
+            .replace("{git_sha}", &self.git_sha)
+            .replace("{git_sha_short}", &self.git_sha_short)
+            .replace("{git_repo}", &self.git_repo)
+            .replace("{date}", &self.date)
+            .replace("{time}", &self.time)
+            .replace("{shell}", &self.shell)
+            .replace("{newline}", &self.newline)
+            .replace("{$}", &self.dollar)
+    }
+}
+
+/// Run a git command and return trimmed stdout, or empty string on failure.
+fn git_cmd(args: &[&str]) -> String {
     std::process::Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .args(args)
         .stderr(std::process::Stdio::null())
         .output()
         .ok()
@@ -244,35 +452,37 @@ fn git_branch() -> String {
         .unwrap_or_default()
 }
 
+/// Get current date and time as (YYYY-MM-DD, HH:MM:SS).
+fn chrono_now() -> (String, String) {
+    std::process::Command::new("date")
+        .arg("+%Y-%m-%d %H:%M:%S")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| {
+            let s = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+            let mut parts = s.splitn(2, ' ');
+            let date = parts.next().unwrap_or("").to_owned();
+            let time = parts.next().unwrap_or("").to_owned();
+            (date, time)
+        })
+        .unwrap_or_else(|| (String::new(), String::new()))
+}
+
 /// Build the prompt string from the configured parts.
 pub fn build_prompt(config: &Config, last_exit_code: i32) -> String {
-    let user = env::var("USER").unwrap_or_else(|_| "user".to_owned());
-    let host = hostname();
-    let cwd = env::current_dir()
-        .map(|p| {
-            let home = dirs::home_dir().unwrap_or_default();
-            if let Ok(rest) = p.strip_prefix(&home) {
-                format!("~/{}", rest.display())
-                    .trim_end_matches('/')
-                    .to_owned()
-            } else {
-                p.display().to_string()
-            }
-        })
-        .unwrap_or_else(|_| "?".to_owned());
-    let cwd = if cwd == "~/" { "~".to_owned() } else { cwd };
-    let branch = git_branch();
+    let vars = PromptVars::collect();
 
     let mut prompt = String::new();
 
     if config.prompt.show_exit_code && last_exit_code != 0 {
         let code_text = format!("[{last_exit_code}] ");
-        prompt.push_str(&colorize(&code_text, &config.prompt.exit_code_color, true));
+        prompt.push_str(&colorize_simple(&code_text, &config.prompt.exit_code_color, true));
     }
 
     for part in &config.prompt.parts {
-        let expanded = expand_prompt_vars(&part.text, &user, &host, &cwd, &branch);
-        prompt.push_str(&colorize(&expanded, &part.color, part.bold));
+        let expanded = vars.expand(&part.text);
+        prompt.push_str(&colorize(&expanded, part));
     }
 
     prompt
@@ -780,22 +990,47 @@ mod tests {
     }
 
     #[test]
-    fn test_color_code() {
-        assert_eq!(color_code("red"), Some("31"));
-        assert_eq!(color_code("green"), Some("32"));
-        assert_eq!(color_code("blue"), Some("34"));
-        assert_eq!(color_code("none"), None);
-        assert_eq!(color_code(""), None);
+    fn test_fg_code() {
+        assert_eq!(fg_code("red"), Some("31"));
+        assert_eq!(fg_code("green"), Some("32"));
+        assert_eq!(fg_code("blue"), Some("34"));
+        assert_eq!(fg_code("bright_red"), Some("91"));
+        assert_eq!(fg_code("gray"), Some("90"));
+        assert_eq!(fg_code("grey"), Some("90"));
+        assert_eq!(fg_code("none"), None);
+        assert_eq!(fg_code(""), None);
+    }
+
+    #[test]
+    fn test_bg_code() {
+        assert_eq!(bg_code("red"), Some("41"));
+        assert_eq!(bg_code("bright_blue"), Some("104"));
+        assert_eq!(bg_code("none"), None);
+    }
+
+    fn make_part(color: &str, bg: &str, bold: bool, dim: bool, italic: bool, underline: bool, strikethrough: bool) -> PromptPart {
+        PromptPart {
+            text: String::new(),
+            color: color.to_owned(),
+            bg: bg.to_owned(),
+            bold,
+            dim,
+            italic,
+            underline,
+            strikethrough,
+        }
     }
 
     #[test]
     fn test_colorize_none() {
-        assert_eq!(colorize("hello", "none", false), "hello");
+        let part = make_part("none", "none", false, false, false, false, false);
+        assert_eq!(colorize("hello", &part), "hello");
     }
 
     #[test]
     fn test_colorize_with_color() {
-        let result = colorize("hello", "red", false);
+        let part = make_part("red", "none", false, false, false, false, false);
+        let result = colorize("hello", &part);
         assert!(result.contains("\x1b[31m"));
         assert!(result.contains("hello"));
         assert!(result.contains("\x1b[0m"));
@@ -803,28 +1038,71 @@ mod tests {
 
     #[test]
     fn test_colorize_bold() {
-        let result = colorize("hello", "none", true);
+        let part = make_part("none", "none", true, false, false, false, false);
+        let result = colorize("hello", &part);
         assert!(result.contains("\x1b[1m"));
         assert!(result.contains("hello"));
     }
 
     #[test]
     fn test_colorize_bold_and_color() {
-        let result = colorize("hello", "green", true);
+        let part = make_part("green", "none", true, false, false, false, false);
+        let result = colorize("hello", &part);
         assert!(result.contains("\x1b[1;32m"));
         assert!(result.contains("hello"));
     }
 
     #[test]
-    fn test_expand_prompt_vars() {
-        assert_eq!(
-            expand_prompt_vars("{user}@{host}", "alice", "box", "/tmp", "main"),
-            "alice@box"
-        );
-        assert_eq!(
-            expand_prompt_vars("{cwd} ({git_branch})", "alice", "box", "~/src", "dev"),
-            "~/src (dev)"
-        );
+    fn test_colorize_italic_underline() {
+        let part = make_part("none", "none", false, false, true, true, false);
+        let result = colorize("hello", &part);
+        assert!(result.contains("\x1b[3;4m"));
+    }
+
+    #[test]
+    fn test_colorize_bg() {
+        let part = make_part("white", "blue", false, false, false, false, false);
+        let result = colorize("hello", &part);
+        assert!(result.contains("37"));
+        assert!(result.contains("44"));
+    }
+
+    #[test]
+    fn test_colorize_bright() {
+        let part = make_part("bright_cyan", "none", false, false, false, false, false);
+        let result = colorize("hello", &part);
+        assert!(result.contains("\x1b[96m"));
+    }
+
+    #[test]
+    fn test_prompt_vars_expand() {
+        let vars = PromptVars {
+            user: "alice".to_owned(),
+            host: "box".to_owned(),
+            cwd: "~/src".to_owned(),
+            cwd_basename: "src".to_owned(),
+            git_branch: "main".to_owned(),
+            git_dirty: "clean".to_owned(),
+            git_status: String::new(),
+            git_sha: "abc123".to_owned(),
+            git_sha_short: "abc".to_owned(),
+            git_repo: "myrepo".to_owned(),
+            date: "2026-01-01".to_owned(),
+            time: "12:00:00".to_owned(),
+            shell: "rsshell".to_owned(),
+            newline: "\n".to_owned(),
+            dollar: "$".to_owned(),
+        };
+        assert_eq!(vars.expand("{user}@{host}"), "alice@box");
+        assert_eq!(vars.expand("{cwd} ({git_branch})"), "~/src (main)");
+        assert_eq!(vars.expand("{cwd_basename}"), "src");
+        assert_eq!(vars.expand("{git_dirty}"), "clean");
+        assert_eq!(vars.expand("{git_sha_short}"), "abc");
+        assert_eq!(vars.expand("{git_repo}"), "myrepo");
+        assert_eq!(vars.expand("{date} {time}"), "2026-01-01 12:00:00");
+        assert_eq!(vars.expand("{shell}"), "rsshell");
+        assert_eq!(vars.expand("{$}"), "$");
+        assert_eq!(vars.expand("{newline}"), "\n");
     }
 
     #[test]
