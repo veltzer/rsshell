@@ -167,7 +167,6 @@ fn color_code(name: &str) -> Option<&'static str> {
 }
 
 /// Wrap text in ANSI color/bold escape sequences.
-/// Uses \x01 and \x02 markers so rustyline knows these are non-printable.
 fn colorize(text: &str, color: &str, bold: bool) -> String {
     let code = color_code(color);
     if code.is_none() && !bold {
@@ -182,7 +181,7 @@ fn colorize(text: &str, color: &str, bold: bool) -> String {
         params.push(c);
     }
     let seq = params.join(";");
-    format!("\x01\x1b[{seq}m\x02{text}\x01\x1b[0m\x02")
+    format!("\x1b[{seq}m{text}\x1b[0m")
 }
 
 /// Expand prompt variables in a text string.
