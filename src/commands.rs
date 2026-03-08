@@ -61,7 +61,7 @@ pub fn execute_line(
 }
 
 /// Parse a variable assignment like VAR=value.
-fn parse_variable_assignment(line: &str) -> Option<(String, String)> {
+pub fn parse_variable_assignment(line: &str) -> Option<(String, String)> {
     if let Some(eq_pos) = line.find('=') {
         let name = &line[..eq_pos];
         // Variable names must be alphanumeric/underscore and not empty
@@ -74,7 +74,7 @@ fn parse_variable_assignment(line: &str) -> Option<(String, String)> {
 }
 
 /// Expand local shell variables.
-fn expand_local_vars(input: &str, vars: &HashMap<String, String>) -> String {
+pub fn expand_local_vars(input: &str, vars: &HashMap<String, String>) -> String {
     let mut result = input.to_owned();
     for (name, value) in vars {
         result = result.replace(&format!("${name}"), value);
@@ -84,7 +84,7 @@ fn expand_local_vars(input: &str, vars: &HashMap<String, String>) -> String {
 }
 
 /// Expand aliases (first word only, non-recursive).
-fn expand_aliases(line: &str, config: &Config) -> String {
+pub fn expand_aliases(line: &str, config: &Config) -> String {
     let trimmed = line.trim();
     let first_space = trimmed.find(' ');
     let first_word = match first_space {
@@ -544,151 +544,4 @@ pub fn cmd_version() {
     println!("RUSTC_SEMVER: {}", env!("RUSTC_SEMVER"));
     println!("RUST_EDITION: {}", env!("RUST_EDITION"));
     println!("BUILD_TIMESTAMP: {}", env!("BUILD_TIMESTAMP"));
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_variable_assignment() {
-        assert_eq!(
-            parse_variable_assignment("FOO=bar"),
-            Some(("FOO".to_owned(), "bar".to_owned()))
-        );
-        assert_eq!(
-            parse_variable_assignment("MY_VAR=hello world"),
-            Some(("MY_VAR".to_owned(), "hello world".to_owned()))
-        );
-        assert_eq!(parse_variable_assignment("ls -la"), None);
-        assert_eq!(parse_variable_assignment("=value"), None);
-    }
-
-    #[test]
-    fn test_expand_aliases() {
-        let mut config = Config::default();
-        config.aliases.insert("ll".to_owned(), "ls -la".to_owned());
-        assert_eq!(expand_aliases("ll /tmp", &config), "ls -la /tmp");
-        assert_eq!(expand_aliases("ll", &config), "ls -la");
-        assert_eq!(expand_aliases("ls /tmp", &config), "ls /tmp");
-    }
-
-    #[test]
-    fn test_expand_local_vars() {
-        let mut vars = HashMap::new();
-        vars.insert("name".to_owned(), "world".to_owned());
-        assert_eq!(expand_local_vars("hello $name", &vars), "hello world");
-        assert_eq!(expand_local_vars("hello ${name}", &vars), "hello world");
-    }
-
-    #[test]
-    fn test_expand_local_vars_multiple() {
-        let mut vars = HashMap::new();
-        vars.insert("first".to_owned(), "hello".to_owned());
-        vars.insert("second".to_owned(), "world".to_owned());
-        assert_eq!(expand_local_vars("$first $second", &vars), "hello world");
-    }
-
-    #[test]
-    fn test_expand_local_vars_no_match() {
-        let vars = HashMap::new();
-        assert_eq!(expand_local_vars("hello $name", &vars), "hello $name");
-    }
-
-    #[test]
-    fn test_parse_variable_assignment_empty_value() {
-        assert_eq!(
-            parse_variable_assignment("FOO="),
-            Some(("FOO".to_owned(), String::new()))
-        );
-    }
-
-    #[test]
-    fn test_parse_variable_assignment_with_equals_in_value() {
-        assert_eq!(
-            parse_variable_assignment("FOO=a=b"),
-            Some(("FOO".to_owned(), "a=b".to_owned()))
-        );
-    }
-
-    #[test]
-    fn test_parse_variable_assignment_invalid_name() {
-        // Name with dash is not a valid variable
-        assert_eq!(parse_variable_assignment("foo-bar=baz"), None);
-    }
-
-    #[test]
-    fn test_parse_variable_assignment_numeric_name() {
-        assert_eq!(
-            parse_variable_assignment("VAR123=val"),
-            Some(("VAR123".to_owned(), "val".to_owned()))
-        );
-    }
-
-    #[test]
-    fn test_expand_aliases_no_match() {
-        let config = Config::default();
-        assert_eq!(expand_aliases("ls -la", &config), "ls -la");
-    }
-
-    #[test]
-    fn test_expand_aliases_exact_match_no_args() {
-        let mut config = Config::default();
-        config.aliases.insert("ll".to_owned(), "ls -la".to_owned());
-        assert_eq!(expand_aliases("ll", &config), "ls -la");
-    }
-
-    #[test]
-    fn test_expand_aliases_only_first_word() {
-        let mut config = Config::default();
-        config.aliases.insert("ll".to_owned(), "ls -la".to_owned());
-        // "ll" in the middle should not expand
-        assert_eq!(expand_aliases("echo ll", &config), "echo ll");
-    }
-
-    #[test]
-    fn test_execute_line_empty_and_comment() {
-        let config = Config::default();
-        let mut vars = HashMap::new();
-        assert_eq!(execute_line("", &config, &mut vars), 0);
-        assert_eq!(execute_line("   ", &config, &mut vars), 0);
-        assert_eq!(execute_line("# this is a comment", &config, &mut vars), 0);
-    }
-
-    #[test]
-    fn test_execute_line_variable_assignment() {
-        let config = Config::default();
-        let mut vars = HashMap::new();
-        assert_eq!(execute_line("FOO=bar", &config, &mut vars), 0);
-        assert_eq!(vars.get("FOO").unwrap(), "bar");
-    }
-
-    #[test]
-    fn test_execute_line_echo() {
-        let config = Config::default();
-        let mut vars = HashMap::new();
-        assert_eq!(execute_line("echo hello", &config, &mut vars), 0);
-    }
-
-    #[test]
-    fn test_execute_line_nonexistent_command() {
-        let config = Config::default();
-        let mut vars = HashMap::new();
-        assert_eq!(execute_line("rsshell_nonexistent_cmd_xyz", &config, &mut vars), 127);
-    }
-
-    #[test]
-    fn test_execute_line_true_false() {
-        let config = Config::default();
-        let mut vars = HashMap::new();
-        assert_eq!(execute_line("true", &config, &mut vars), 0);
-        assert_ne!(execute_line("false", &config, &mut vars), 0);
-    }
-
-    #[test]
-    fn test_execute_line_pipeline() {
-        let config = Config::default();
-        let mut vars = HashMap::new();
-        assert_eq!(execute_line("echo hello | cat", &config, &mut vars), 0);
-    }
 }

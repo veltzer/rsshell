@@ -1,6 +1,3 @@
-mod commands;
-mod helpers;
-
 use std::collections::HashMap;
 
 use clap::{CommandFactory, Parser, Subcommand};
@@ -10,7 +7,8 @@ use rustyline::history::DefaultHistory;
 use rustyline::Editor;
 use rustyline::error::ReadlineError;
 
-use crate::helpers::{build_prompt, expand_history, history_path, load_config};
+use rsshell::commands;
+use rsshell::helpers::{build_prompt, expand_history, history_path, load_config};
 
 /// rsshell - A simple Unix shell written in Rust
 #[derive(Parser)]
@@ -166,28 +164,4 @@ fn run_interactive() {
         let _ = std::fs::create_dir_all(parent);
     }
     let _ = editor.save_history(&hist_path);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_cli_parse() {
-        // Verify CLI parses without error
-        let cli = Cli::try_parse_from(["rsshell", "version"]);
-        assert!(cli.is_ok());
-    }
-
-    #[test]
-    fn test_cli_command_string() {
-        let cli = Cli::try_parse_from(["rsshell", "-c", "echo hello"]).unwrap();
-        assert_eq!(cli.command_string, Some("echo hello".to_owned()));
-    }
-
-    #[test]
-    fn test_cli_init_config() {
-        let cli = Cli::try_parse_from(["rsshell", "init-config"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::InitConfig)));
-    }
 }
