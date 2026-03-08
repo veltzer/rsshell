@@ -1268,4 +1268,334 @@ mod tests {
         assert!(redir.stderr_file.is_none());
         assert!(!redir.stderr_to_stdout);
     }
+
+    // ── parse_command_line edge cases ──
+
+    #[test]
+    fn test_parse_mixed_quotes() {
+        assert_eq!(
+            parse_command_line(r#"echo "it's" 'a "test"'"#),
+            vec!["echo", "it's", r#"a "test""#]
+        );
+    }
+
+    #[test]
+    fn test_parse_adjacent_quotes() {
+        // Adjacent quoted segments merge into one arg
+        assert_eq!(
+            parse_command_line(r#""hello""world""#),
+            vec!["helloworld"]
+        );
+    }
+
+    #[test]
+    fn test_parse_escaped_quote() {
+        assert_eq!(
+            parse_command_line(r#"echo \"hello\""#),
+            vec!["echo", r#""hello""#]
+        );
+    }
+
+    #[test]
+    fn test_parse_escaped_space_in_double_quotes() {
+        // Backslash inside double quotes is consumed as escape
+        assert_eq!(
+            parse_command_line(r#"echo "hello\ world""#),
+            vec!["echo", "hello world"]
+        );
+    }
+
+    #[test]
+    fn test_parse_tabs_as_separators() {
+        assert_eq!(
+            parse_command_line("ls\t-la\t/tmp"),
+            vec!["ls", "-la", "/tmp"]
+        );
+    }
+
+    #[test]
+    fn test_parse_multiple_spaces() {
+        assert_eq!(
+            parse_command_line("ls   -la    /tmp"),
+            vec!["ls", "-la", "/tmp"]
+        );
+    }
+
+    // ── split_pipes edge cases ──
+
+    #[test]
+    fn test_split_pipes_single_command() {
+        assert_eq!(split_pipes("ls -la"), vec!["ls -la"]);
+    }
+
+    #[test]
+    fn test_split_pipes_pipe_in_single_quotes() {
+        assert_eq!(
+            split_pipes("echo 'hello | world'"),
+            vec!["echo 'hello | world'"]
+        );
+    }
+
+    #[test]
+    fn test_split_pipes_pipe_in_double_quotes() {
+        assert_eq!(
+            split_pipes(r#"echo "hello | world""#),
+            vec![r#"echo "hello | world""#]
+        );
+    }
+
+    #[test]
+    fn test_split_pipes_escaped_pipe() {
+        assert_eq!(
+            split_pipes(r"echo hello \| world"),
+            vec![r"echo hello \| world"]
+        );
+    }
+
+    #[test]
+    fn test_split_pipes_empty() {
+        assert!(split_pipes("").is_empty());
+        assert!(split_pipes("   ").is_empty());
+    }
+
+    // ── expand_env_vars edge cases ──
+
+    #[test]
+    fn test_expand_env_vars_no_vars() {
+        assert_eq!(expand_env_vars("hello world"), "hello world");
+    }
+
+    #[test]
+    fn test_expand_env_vars_undefined() {
+        // Undefined vars expand to empty string
+        assert_eq!(expand_env_vars("$RSSHELL_NONEXISTENT_VAR_XYZ"), "");
+    }
+
+    #[test]
+    fn test_expand_env_vars_braced_undefined() {
+        assert_eq!(expand_env_vars("${RSSHELL_NONEXISTENT_VAR_XYZ}"), "");
+    }
+
+    #[test]
+    fn test_expand_env_vars_adjacent_text() {
+        unsafe { env::set_var("RSSHELL_TEST_ADJ", "foo"); }
+        assert_eq!(expand_env_vars("${RSSHELL_TEST_ADJ}bar"), "foobar");
+        unsafe { env::remove_var("RSSHELL_TEST_ADJ"); }
+    }
+
+    #[test]
+    fn test_expand_env_vars_multiple() {
+        unsafe {
+            env::set_var("RSSHELL_T1", "hello");
+            env::set_var("RSSHELL_T2", "world");
+        }
+        assert_eq!(expand_env_vars("$RSSHELL_T1 $RSSHELL_T2"), "hello world");
+        unsafe {
+            env::remove_var("RSSHELL_T1");
+            env::remove_var("RSSHELL_T2");
+        }
+    }
+
+    // ── expand_tilde edge cases ──
+
+    #[test]
+    fn test_expand_tilde_no_expansion() {
+        assert_eq!(expand_tilde("/usr/bin"), "/usr/bin");
+        assert_eq!(expand_tilde("relative/path"), "relative/path");
+        // ~user syntax is not expanded
+        assert_eq!(expand_tilde("~other/foo"), "~other/foo");
+    }
+
+    // ── expand_globs ──
+
+    #[test]
+    fn test_expand_globs_no_pattern() {
+        let args = vec![s("ls"), s("-la"), s("/tmp")];
+        assert_eq!(expand_globs(&args), args);
+    }
+
+    #[test]
+    fn test_expand_globs_no_match_returns_literal() {
+        let args = vec![s("/nonexistent_rsshell_dir_xyz/*.txt")];
+        assert_eq!(expand_globs(&args), args);
+    }
+
+    // ── colorize_simple ──
+
+    #[test]
+    fn test_colorize_simple_no_style() {
+        assert_eq!(colorize_simple("hello", "none", false), "hello");
+    }
+
+    #[test]
+    fn test_colorize_simple_bold_only() {
+        let result = colorize_simple("hello", "none", true);
+        assert!(result.contains("\x1b[1m"));
+        assert!(result.contains("hello"));
+        assert!(result.contains("\x1b[0m"));
+    }
+
+    #[test]
+    fn test_colorize_simple_color_and_bold() {
+        let result = colorize_simple("hello", "red", true);
+        assert!(result.contains("1"));
+        assert!(result.contains("31"));
+        assert!(result.contains("hello"));
+    }
+
+    // ── colorize all styles ──
+
+    #[test]
+    fn test_colorize_dim() {
+        let part = make_part("none", "none", false, true, false, false, false);
+        let result = colorize("test", &part);
+        assert!(result.contains("\x1b[2m"));
+    }
+
+    #[test]
+    fn test_colorize_strikethrough() {
+        let part = make_part("none", "none", false, false, false, false, true);
+        let result = colorize("test", &part);
+        assert!(result.contains("\x1b[9m"));
+    }
+
+    #[test]
+    fn test_colorize_all_styles() {
+        let part = make_part("red", "blue", true, true, true, true, true);
+        let result = colorize("test", &part);
+        assert!(result.contains("1"));  // bold
+        assert!(result.contains("2"));  // dim
+        assert!(result.contains("3"));  // italic
+        assert!(result.contains("4"));  // underline
+        assert!(result.contains("9"));  // strikethrough
+        assert!(result.contains("31")); // red fg
+        assert!(result.contains("44")); // blue bg
+    }
+
+    // ── Config loading ──
+
+    #[test]
+    fn test_default_config_values() {
+        let config = Config::default();
+        assert!(!config.prompt.show_exit_code);
+        assert_eq!(config.prompt.exit_code_color, "red");
+        assert_eq!(config.history.max_entries, 10000);
+        assert!(config.history.ignore_duplicates);
+        assert!(config.history.ignore_space);
+        assert!(config.aliases.is_empty());
+        assert!(config.env.is_empty());
+        assert!(config.startup.commands.is_empty());
+    }
+
+    #[test]
+    fn test_config_from_toml() {
+        let toml_str = r#"
+[prompt]
+show_exit_code = true
+
+[aliases]
+ll = "ls -la"
+gs = "git status"
+
+[env]
+EDITOR = "vim"
+
+[startup]
+commands = ["echo hello"]
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(config.prompt.show_exit_code);
+        assert_eq!(config.aliases.get("ll").unwrap(), "ls -la");
+        assert_eq!(config.aliases.get("gs").unwrap(), "git status");
+        assert_eq!(config.env.get("EDITOR").unwrap(), "vim");
+        assert_eq!(config.startup.commands, vec!["echo hello"]);
+    }
+
+    #[test]
+    fn test_config_empty_toml() {
+        let config: Config = toml::from_str("").unwrap();
+        assert!(!config.prompt.show_exit_code);
+        assert!(config.aliases.is_empty());
+    }
+
+    // ── expand_history additional edge cases ──
+
+    #[test]
+    fn test_expand_history_bang_before_space() {
+        let history = vec!["ls -la"];
+        // '!' followed by space is kept literal
+        assert_eq!(expand_history("echo ! hello", &history).unwrap(), "echo ! hello");
+    }
+
+    #[test]
+    fn test_expand_history_bang_zero() {
+        let history = vec!["ls -la"];
+        assert!(expand_history("!0", &history).is_err());
+    }
+
+    #[test]
+    fn test_expand_history_negative_zero() {
+        let history = vec!["ls -la"];
+        assert!(expand_history("!-0", &history).is_err());
+    }
+
+    #[test]
+    fn test_expand_history_prefix_with_dots() {
+        let history = vec!["./configure --prefix=/usr", "make"];
+        assert_eq!(expand_history("!./conf", &history).unwrap(), "./configure --prefix=/usr");
+    }
+
+    #[test]
+    fn test_expand_history_prefix_with_slash() {
+        let history = vec!["/usr/bin/foo --bar", "echo done"];
+        assert_eq!(expand_history("!/usr", &history).unwrap(), "/usr/bin/foo --bar");
+    }
+
+    // ── parse_redirections additional ──
+
+    #[test]
+    fn test_parse_redirections_no_space_stdin() {
+        let args = vec![s("sort"), s("<input.txt")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["sort"]);
+        assert_eq!(redir.stdin_file.as_deref(), Some("input.txt"));
+    }
+
+    #[test]
+    fn test_parse_redirections_no_space_append() {
+        let args = vec![s("echo"), s("hi"), s(">>out.txt")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["echo", "hi"]);
+        assert_eq!(redir.stdout_file.as_deref(), Some("out.txt"));
+        assert!(redir.stdout_append);
+    }
+
+    #[test]
+    fn test_parse_redirections_2_stderr_no_space() {
+        let args = vec![s("cmd"), s("2>err.txt")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["cmd"]);
+        assert_eq!(redir.stderr_file.as_deref(), Some("err.txt"));
+    }
+
+    #[test]
+    fn test_parse_redirections_2_stderr_to_stdout_no_space() {
+        let args = vec![s("cmd"), s("2>&1")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["cmd"]);
+        assert!(redir.stderr_to_stdout);
+    }
+
+    #[test]
+    fn test_parse_redirections_missing_file_stdin() {
+        let args = vec![s("sort"), s("<")];
+        assert!(parse_redirections(&args).is_err());
+    }
+
+    #[test]
+    fn test_parse_redirections_missing_file_stderr() {
+        let args = vec![s("cmd"), s("2>")];
+        // "2>" as a token requires a following arg
+        assert!(parse_redirections(&args).is_err());
+    }
 }
