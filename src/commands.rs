@@ -536,14 +536,14 @@ pub fn cmd_init_config() -> i32 {
 
 /// Print version information.
 pub fn cmd_version() {
-    println!("rsshell {}", env!("CARGO_PKG_VERSION"));
-    println!("  git sha:     {}", env!("GIT_SHA"));
-    println!("  git branch:  {}", env!("GIT_BRANCH"));
-    println!("  git describe:{}", env!("GIT_DESCRIBE"));
-    println!("  git dirty:   {}", env!("GIT_DIRTY"));
-    println!("  rustc:       {}", env!("RUSTC_SEMVER"));
-    println!("  edition:     {}", env!("RUST_EDITION"));
-    println!("  built:       {}", env!("BUILD_TIMESTAMP"));
+    println!("rsshell {} by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
+    println!("GIT_DESCRIBE: {}", env!("GIT_DESCRIBE"));
+    println!("GIT_SHA: {}", env!("GIT_SHA"));
+    println!("GIT_BRANCH: {}", env!("GIT_BRANCH"));
+    println!("GIT_DIRTY: {}", env!("GIT_DIRTY"));
+    println!("RUSTC_SEMVER: {}", env!("RUSTC_SEMVER"));
+    println!("RUST_EDITION: {}", env!("RUST_EDITION"));
+    println!("BUILD_TIMESTAMP: {}", env!("BUILD_TIMESTAMP"));
 }
 
 #[cfg(test)]
