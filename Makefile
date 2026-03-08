@@ -50,7 +50,9 @@ PART ?= patch
 release:
 	@if [ -n "$$(git status --porcelain)" ]; then echo "Error: working tree is dirty, commit or stash changes first"; exit 1; fi
 	@CURRENT=$$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'); \
-	IFS='.' read -r MAJOR MINOR PATCH <<< "$$CURRENT"; \
+	MAJOR=$$(echo "$$CURRENT" | cut -d. -f1); \
+	MINOR=$$(echo "$$CURRENT" | cut -d. -f2); \
+	PATCH=$$(echo "$$CURRENT" | cut -d. -f3); \
 	case "$(PART)" in \
 		patch) PATCH=$$((PATCH + 1));; \
 		minor) MINOR=$$((MINOR + 1)); PATCH=0;; \
