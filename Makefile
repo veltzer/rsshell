@@ -65,7 +65,7 @@ release:
 	cargo check --quiet; \
 	git add Cargo.toml Cargo.lock; \
 	git commit -m "release v$$NEW"; \
-	git tag "v$$NEW"; \
+	git tag -a "v$$NEW" -m "release v$$NEW"; \
 	git push; \
 	git push origin "v$$NEW"; \
 	echo "Released v$$NEW"
