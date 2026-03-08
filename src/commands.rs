@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::env;
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::helpers::{
-    self, Config, DEFAULT_CONFIG, config_dir, config_path, expand_env_vars, expand_globs,
-    expand_tilde, history_path, parse_command_line, split_pipes,
+    self, Config, DEFAULT_CONFIG, Redirections, config_dir, config_path, expand_env_vars,
+    expand_globs, expand_tilde, history_path, parse_command_line, parse_redirections, split_pipes,
 };
 
 /// Run startup commands from config.
@@ -108,20 +108,32 @@ fn execute_command(args: &[String], _config: &Config) -> i32 {
         return 0;
     }
 
+    // Parse redirections from args
+    let (args, redir) = match parse_redirections(args) {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("rsshell: {e}");
+            return 2;
+        }
+    };
+    if args.is_empty() {
+        return 0;
+    }
+
     let cmd = &args[0];
 
     // Built-in commands
     match cmd.as_str() {
-        "cd" => cmd_cd(args),
-        "exit" | "quit" => cmd_exit(args),
-        "export" => cmd_export(args),
-        "unset" => cmd_unset(args),
-        "source" | "." => cmd_source(args),
+        "cd" => cmd_cd(&args),
+        "exit" | "quit" => cmd_exit(&args),
+        "export" => cmd_export(&args),
+        "unset" => cmd_unset(&args),
+        "source" | "." => cmd_source(&args),
         "pwd" => cmd_pwd(),
-        "echo" => cmd_echo(args),
-        "type" => cmd_type(args),
-        "history" => cmd_history(args),
-        _ => cmd_external(args),
+        "echo" => cmd_echo(&args, &redir),
+        "type" => cmd_type(&args),
+        "history" => cmd_history(&args),
+        _ => cmd_external(&args, &redir),
     }
 }
 
@@ -140,17 +152,58 @@ fn execute_pipeline(segments: &[String], config: &Config) -> i32 {
             continue;
         }
 
+        // Parse redirections from this segment
+        let (args, redir) = match parse_redirections(&args) {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!("rsshell: {e}");
+                return 2;
+            }
+        };
+        if args.is_empty() {
+            continue;
+        }
+
         let args = expand_globs(&args);
         let args: Vec<String> = args.iter().map(|a| expand_tilde(a)).collect();
 
-        // Check for builtins in pipeline - they need special handling
+        let is_first = i == 0;
         let is_last = i == segments.len() - 1;
 
-        let stdin = prev_stdout.take().unwrap_or(Stdio::inherit());
+        // stdin: from pipe or redirection (only first segment can have < redirection)
+        let default_stdin = prev_stdout.take().unwrap_or(Stdio::inherit());
+        let stdin = if is_first {
+            match redir.stdin_stdio(default_stdin) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return 1;
+                }
+            }
+        } else {
+            default_stdin
+        };
+
+        // stdout: to pipe or redirection (only last segment can have > redirection)
         let stdout = if is_last {
-            Stdio::inherit()
+            match redir.stdout_stdio(Stdio::inherit()) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return 1;
+                }
+            }
         } else {
             Stdio::piped()
+        };
+
+        // stderr: redirection applies per-segment
+        let stderr = match redir.stderr_stdio(Stdio::inherit()) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{e}");
+                return 1;
+            }
         };
 
         // For builtins in a pipeline, we'd need to fork. For simplicity,
@@ -160,6 +213,7 @@ fn execute_pipeline(segments: &[String], config: &Config) -> i32 {
             .args(&args[1..])
             .stdin(stdin)
             .stdout(stdout)
+            .stderr(stderr)
             .spawn()
         {
             Ok(mut child) => {
@@ -290,10 +344,29 @@ fn cmd_pwd() -> i32 {
     }
 }
 
-fn cmd_echo(args: &[String]) -> i32 {
+fn cmd_echo(args: &[String], redir: &Redirections) -> i32 {
     let output = args[1..].join(" ");
-    println!("{output}");
-    0
+    if let Some(path) = &redir.stdout_file {
+        let path = expand_tilde(path);
+        let result = if redir.stdout_append {
+            use std::io::Write;
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .and_then(|mut f| writeln!(f, "{output}"))
+        } else {
+            fs::write(&path, format!("{output}\n"))
+        };
+        if let Err(e) = result {
+            eprintln!("rsshell: {path}: {e}");
+            return 1;
+        }
+        0
+    } else {
+        println!("{output}");
+        0
+    }
 }
 
 fn cmd_type(args: &[String]) -> i32 {
@@ -364,12 +437,63 @@ fn cmd_history(args: &[String]) -> i32 {
     }
 }
 
-/// Execute an external command.
-fn cmd_external(args: &[String]) -> i32 {
+/// Execute an external command with redirections.
+fn cmd_external(args: &[String], redir: &Redirections) -> i32 {
     let args = expand_globs(args);
     let args: Vec<String> = args.iter().map(|a| expand_tilde(a)).collect();
 
-    match Command::new(&args[0]).args(&args[1..]).spawn() {
+    let stdin = match redir.stdin_stdio(Stdio::inherit()) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("{e}");
+            return 1;
+        }
+    };
+    let stdout = match redir.stdout_stdio(Stdio::inherit()) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("{e}");
+            return 1;
+        }
+    };
+    let stderr = if redir.stderr_to_stdout {
+        // 2>&1: we need stdout to be piped so we can dup it for stderr.
+        // But if stdout is already a file, we open it again for stderr.
+        match &redir.stdout_file {
+            Some(path) => {
+                let path = expand_tilde(path);
+                let file = if redir.stdout_append {
+                    OpenOptions::new().create(true).append(true).open(&path)
+                } else {
+                    OpenOptions::new().create(true).truncate(true).write(true).open(&path)
+                };
+                match file {
+                    Ok(f) => Stdio::from(f),
+                    Err(e) => {
+                        eprintln!("rsshell: {path}: {e}");
+                        return 1;
+                    }
+                }
+            }
+            None => Stdio::inherit(),
+        }
+    } else {
+        match redir.stderr_stdio(Stdio::inherit()) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{e}");
+                return 1;
+            }
+        }
+    };
+
+    match Command::new(&args[0])
+        .args(&args[1..])
+        .stdin(stdin)
+        .stdout(stdout)
+        .stderr(stderr)
+        .spawn()
+    {
         Ok(mut child) => match child.wait() {
             Ok(status) => status.code().unwrap_or_else(|| {
                 status.signal().map(|s| 128 + s).unwrap_or(1)

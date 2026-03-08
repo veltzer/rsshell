@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::env;
+use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
+use std::process::Stdio;
 
 use serde::Deserialize;
 
@@ -383,6 +385,172 @@ pub fn expand_history(input: &str, history: &[&str]) -> Result<String, String> {
     Ok(result)
 }
 
+/// Parsed I/O redirections for a command.
+#[derive(Debug, Default)]
+pub struct Redirections {
+    pub stdin_file: Option<String>,
+    pub stdout_file: Option<String>,
+    pub stdout_append: bool,
+    pub stderr_file: Option<String>,
+    pub stderr_append: bool,
+    pub stderr_to_stdout: bool,
+}
+
+impl Redirections {
+    /// Open the configured stdin as a Stdio, or return the given default.
+    pub fn stdin_stdio(&self, default: Stdio) -> Result<Stdio, String> {
+        match &self.stdin_file {
+            Some(path) => {
+                let path = expand_tilde(path);
+                File::open(&path)
+                    .map(Stdio::from)
+                    .map_err(|e| format!("rsshell: {path}: {e}"))
+            }
+            None => Ok(default),
+        }
+    }
+
+    /// Open the configured stdout as a Stdio, or return the given default.
+    pub fn stdout_stdio(&self, default: Stdio) -> Result<Stdio, String> {
+        match &self.stdout_file {
+            Some(path) => {
+                let path = expand_tilde(path);
+                let file = if self.stdout_append {
+                    OpenOptions::new().create(true).append(true).open(&path)
+                } else {
+                    File::create(&path)
+                };
+                file.map(Stdio::from)
+                    .map_err(|e| format!("rsshell: {path}: {e}"))
+            }
+            None => Ok(default),
+        }
+    }
+
+    /// Open the configured stderr as a Stdio, or return the given default.
+    pub fn stderr_stdio(&self, default: Stdio) -> Result<Stdio, String> {
+        if self.stderr_to_stdout {
+            // 2>&1 is handled at the Command level by the caller
+            return Ok(default);
+        }
+        match &self.stderr_file {
+            Some(path) => {
+                let path = expand_tilde(path);
+                let file = if self.stderr_append {
+                    OpenOptions::new().create(true).append(true).open(&path)
+                } else {
+                    File::create(&path)
+                };
+                file.map(Stdio::from)
+                    .map_err(|e| format!("rsshell: {path}: {e}"))
+            }
+            None => Ok(default),
+        }
+    }
+}
+
+/// Extract redirections from a list of args, returning the remaining args and the redirections.
+/// Supports: < file, > file, >> file, 2> file, 2>> file, 2>&1
+pub fn parse_redirections(args: &[String]) -> Result<(Vec<String>, Redirections), String> {
+    let mut remaining = Vec::new();
+    let mut redir = Redirections::default();
+    let mut i = 0;
+
+    while i < args.len() {
+        let arg = &args[i];
+        match arg.as_str() {
+            "<" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("syntax error near unexpected token `newline'".to_owned());
+                }
+                redir.stdin_file = Some(args[i].clone());
+            }
+            ">" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("syntax error near unexpected token `newline'".to_owned());
+                }
+                redir.stdout_file = Some(args[i].clone());
+                redir.stdout_append = false;
+            }
+            ">>" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("syntax error near unexpected token `newline'".to_owned());
+                }
+                redir.stdout_file = Some(args[i].clone());
+                redir.stdout_append = true;
+            }
+            "2>" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("syntax error near unexpected token `newline'".to_owned());
+                }
+                redir.stderr_file = Some(args[i].clone());
+                redir.stderr_append = false;
+            }
+            "2>>" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("syntax error near unexpected token `newline'".to_owned());
+                }
+                redir.stderr_file = Some(args[i].clone());
+                redir.stderr_append = true;
+            }
+            "2>&1" => {
+                redir.stderr_to_stdout = true;
+            }
+            _ => {
+                // Handle >file, >>file, <file (no space between operator and filename)
+                if let Some(path) = arg.strip_prefix(">>") {
+                    if path.is_empty() {
+                        // Already handled above as ">>" token
+                        remaining.push(arg.clone());
+                    } else {
+                        redir.stdout_file = Some(path.to_owned());
+                        redir.stdout_append = true;
+                    }
+                } else if let Some(path) = arg.strip_prefix('>') {
+                    if path.is_empty() {
+                        remaining.push(arg.clone());
+                    } else {
+                        redir.stdout_file = Some(path.to_owned());
+                        redir.stdout_append = false;
+                    }
+                } else if let Some(path) = arg.strip_prefix('<') {
+                    if path.is_empty() {
+                        remaining.push(arg.clone());
+                    } else {
+                        redir.stdin_file = Some(path.to_owned());
+                    }
+                } else if let Some(path) = arg.strip_prefix("2>>") {
+                    if !path.is_empty() {
+                        redir.stderr_file = Some(path.to_owned());
+                        redir.stderr_append = true;
+                    } else {
+                        remaining.push(arg.clone());
+                    }
+                } else if let Some(path) = arg.strip_prefix("2>") {
+                    if path == "&1" {
+                        redir.stderr_to_stdout = true;
+                    } else if !path.is_empty() {
+                        redir.stderr_file = Some(path.to_owned());
+                        redir.stderr_append = false;
+                    } else {
+                        remaining.push(arg.clone());
+                    }
+                } else {
+                    remaining.push(arg.clone());
+                }
+            }
+        }
+        i += 1;
+    }
+
+    Ok((remaining, redir))
+}
+
 /// Parse a command line into arguments, handling single and double quotes.
 pub fn parse_command_line(input: &str) -> Vec<String> {
     let mut args = Vec::new();
@@ -730,5 +898,96 @@ mod tests {
         assert!(config.prompt.show_exit_code);
         assert!(!config.prompt.parts.is_empty());
         assert_eq!(config.prompt.exit_code_color, "red");
+    }
+
+    fn s(val: &str) -> String {
+        val.to_owned()
+    }
+
+    #[test]
+    fn test_parse_redirections_stdout() {
+        let args = vec![s("echo"), s("hello"), s(">"), s("out.txt")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["echo", "hello"]);
+        assert_eq!(redir.stdout_file.as_deref(), Some("out.txt"));
+        assert!(!redir.stdout_append);
+    }
+
+    #[test]
+    fn test_parse_redirections_stdout_append() {
+        let args = vec![s("echo"), s("hello"), s(">>"), s("out.txt")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["echo", "hello"]);
+        assert_eq!(redir.stdout_file.as_deref(), Some("out.txt"));
+        assert!(redir.stdout_append);
+    }
+
+    #[test]
+    fn test_parse_redirections_stdin() {
+        let args = vec![s("sort"), s("<"), s("input.txt")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["sort"]);
+        assert_eq!(redir.stdin_file.as_deref(), Some("input.txt"));
+    }
+
+    #[test]
+    fn test_parse_redirections_stderr() {
+        let args = vec![s("cmd"), s("2>"), s("err.txt")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["cmd"]);
+        assert_eq!(redir.stderr_file.as_deref(), Some("err.txt"));
+        assert!(!redir.stderr_append);
+    }
+
+    #[test]
+    fn test_parse_redirections_stderr_append() {
+        let args = vec![s("cmd"), s("2>>"), s("err.txt")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["cmd"]);
+        assert_eq!(redir.stderr_file.as_deref(), Some("err.txt"));
+        assert!(redir.stderr_append);
+    }
+
+    #[test]
+    fn test_parse_redirections_stderr_to_stdout() {
+        let args = vec![s("cmd"), s("2>&1")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["cmd"]);
+        assert!(redir.stderr_to_stdout);
+    }
+
+    #[test]
+    fn test_parse_redirections_no_space() {
+        let args = vec![s("echo"), s("hello"), s(">out.txt")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["echo", "hello"]);
+        assert_eq!(redir.stdout_file.as_deref(), Some("out.txt"));
+    }
+
+    #[test]
+    fn test_parse_redirections_combined() {
+        let args = vec![s("cmd"), s("<"), s("in.txt"), s(">"), s("out.txt"), s("2>"), s("err.txt")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["cmd"]);
+        assert_eq!(redir.stdin_file.as_deref(), Some("in.txt"));
+        assert_eq!(redir.stdout_file.as_deref(), Some("out.txt"));
+        assert_eq!(redir.stderr_file.as_deref(), Some("err.txt"));
+    }
+
+    #[test]
+    fn test_parse_redirections_missing_file() {
+        let args = vec![s("echo"), s("hello"), s(">")];
+        assert!(parse_redirections(&args).is_err());
+    }
+
+    #[test]
+    fn test_parse_redirections_none() {
+        let args = vec![s("ls"), s("-la")];
+        let (remaining, redir) = parse_redirections(&args).unwrap();
+        assert_eq!(remaining, vec!["ls", "-la"]);
+        assert!(redir.stdin_file.is_none());
+        assert!(redir.stdout_file.is_none());
+        assert!(redir.stderr_file.is_none());
+        assert!(!redir.stderr_to_stdout);
     }
 }
