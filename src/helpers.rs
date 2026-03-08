@@ -10,6 +10,8 @@ pub struct Config {
     #[serde(default)]
     pub prompt: PromptConfig,
     #[serde(default)]
+    pub history: HistoryConfig,
+    #[serde(default)]
     pub aliases: HashMap<String, String>,
     #[serde(default)]
     pub env: HashMap<String, String>,
@@ -65,6 +67,34 @@ fn default_color() -> String {
     "none".to_owned()
 }
 
+#[derive(Debug, Deserialize)]
+pub struct HistoryConfig {
+    #[serde(default = "default_max_entries")]
+    pub max_entries: usize,
+    #[serde(default = "default_true")]
+    pub ignore_duplicates: bool,
+    #[serde(default = "default_true")]
+    pub ignore_space: bool,
+}
+
+impl Default for HistoryConfig {
+    fn default() -> Self {
+        Self {
+            max_entries: default_max_entries(),
+            ignore_duplicates: true,
+            ignore_space: true,
+        }
+    }
+}
+
+fn default_max_entries() -> usize {
+    10000
+}
+
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Deserialize, Default)]
 pub struct StartupConfig {
     #[serde(default)]
@@ -107,6 +137,14 @@ bold = true
 
 [[prompt.parts]]
 text = "$ "
+
+[history]
+# Maximum number of history entries to keep
+max_entries = 10000
+# Skip duplicate consecutive entries
+ignore_duplicates = true
+# Skip entries that start with a space
+ignore_space = true
 
 [aliases]
 # Define command aliases
@@ -244,6 +282,105 @@ fn hostname() -> String {
         .ok()
         .and_then(|h: std::ffi::OsString| h.into_string().ok())
         .unwrap_or_else(|| "localhost".to_owned())
+}
+
+/// Expand history references in the input line.
+/// Supports: !! (last command), !n (nth entry), !-n (nth from end), !prefix (last match).
+/// Returns Ok(expanded) or Err(message) if the reference is invalid.
+pub fn expand_history(input: &str, history: &[&str]) -> Result<String, String> {
+    if !input.contains('!') {
+        return Ok(input.to_owned());
+    }
+
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    let mut in_single_quote = false;
+
+    while let Some(ch) = chars.next() {
+        if ch == '\'' {
+            in_single_quote = !in_single_quote;
+            result.push(ch);
+            continue;
+        }
+
+        if ch != '!' || in_single_quote {
+            result.push(ch);
+            continue;
+        }
+
+        // We have '!' outside single quotes
+        match chars.peek() {
+            Some(&'!') => {
+                // !! = last command
+                chars.next();
+                if history.is_empty() {
+                    return Err("!!: event not found".to_owned());
+                }
+                result.push_str(history[history.len() - 1]);
+            }
+            Some(&c) if c.is_ascii_digit() => {
+                // !n = nth history entry (1-based)
+                let mut num_str = String::new();
+                while let Some(&d) = chars.peek() {
+                    if d.is_ascii_digit() {
+                        num_str.push(d);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                let n: usize = num_str.parse().unwrap();
+                if n == 0 || n > history.len() {
+                    return Err(format!("!{n}: event not found"));
+                }
+                result.push_str(history[n - 1]);
+            }
+            Some(&'-') => {
+                // !-n = nth from end (1-based)
+                chars.next();
+                let mut num_str = String::new();
+                while let Some(&d) = chars.peek() {
+                    if d.is_ascii_digit() {
+                        num_str.push(d);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                if num_str.is_empty() {
+                    return Err("!-: event not found".to_owned());
+                }
+                let n: usize = num_str.parse().unwrap();
+                if n == 0 || n > history.len() {
+                    return Err(format!("!-{n}: event not found"));
+                }
+                result.push_str(history[history.len() - n]);
+            }
+            Some(&c) if c.is_alphanumeric() || c == '_' || c == '/' || c == '.' => {
+                // !prefix = most recent command starting with prefix
+                let mut prefix = String::new();
+                while let Some(&c) = chars.peek() {
+                    if c.is_alphanumeric() || c == '_' || c == '/' || c == '.' || c == '-' {
+                        prefix.push(c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                if let Some(entry) = history.iter().rev().find(|e| e.starts_with(&prefix)) {
+                    result.push_str(entry);
+                } else {
+                    return Err(format!("!{prefix}: event not found"));
+                }
+            }
+            _ => {
+                // Lone '!' at end or before space/special char — keep literal
+                result.push('!');
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 /// Parse a command line into arguments, handling single and double quotes.
@@ -519,6 +656,71 @@ mod tests {
         assert_eq!(
             expand_prompt_vars("{cwd} ({git_branch})", "alice", "box", "~/src", "dev"),
             "~/src (dev)"
+        );
+    }
+
+    #[test]
+    fn test_expand_history_double_bang() {
+        let history = vec!["ls -la", "echo hello"];
+        assert_eq!(expand_history("!!", &history).unwrap(), "echo hello");
+    }
+
+    #[test]
+    fn test_expand_history_number() {
+        let history = vec!["ls -la", "echo hello", "pwd"];
+        assert_eq!(expand_history("!1", &history).unwrap(), "ls -la");
+        assert_eq!(expand_history("!2", &history).unwrap(), "echo hello");
+        assert_eq!(expand_history("!3", &history).unwrap(), "pwd");
+    }
+
+    #[test]
+    fn test_expand_history_negative() {
+        let history = vec!["ls -la", "echo hello", "pwd"];
+        assert_eq!(expand_history("!-1", &history).unwrap(), "pwd");
+        assert_eq!(expand_history("!-2", &history).unwrap(), "echo hello");
+        assert_eq!(expand_history("!-3", &history).unwrap(), "ls -la");
+    }
+
+    #[test]
+    fn test_expand_history_prefix() {
+        let history = vec!["ls -la", "echo hello", "ls /tmp"];
+        assert_eq!(expand_history("!ls", &history).unwrap(), "ls /tmp");
+        assert_eq!(expand_history("!echo", &history).unwrap(), "echo hello");
+    }
+
+    #[test]
+    fn test_expand_history_not_found() {
+        let history = vec!["ls -la"];
+        assert!(expand_history("!5", &history).is_err());
+        assert!(expand_history("!-5", &history).is_err());
+        assert!(expand_history("!xyz", &history).is_err());
+    }
+
+    #[test]
+    fn test_expand_history_empty() {
+        let history: Vec<&str> = vec![];
+        assert!(expand_history("!!", &history).is_err());
+    }
+
+    #[test]
+    fn test_expand_history_no_expansion() {
+        let history = vec!["ls -la"];
+        assert_eq!(expand_history("echo hello", &history).unwrap(), "echo hello");
+        assert_eq!(expand_history("echo !", &history).unwrap(), "echo !");
+    }
+
+    #[test]
+    fn test_expand_history_in_single_quotes() {
+        let history = vec!["ls -la"];
+        assert_eq!(expand_history("echo '!!'", &history).unwrap(), "echo '!!'");
+    }
+
+    #[test]
+    fn test_expand_history_mixed() {
+        let history = vec!["ls -la", "echo hello"];
+        assert_eq!(
+            expand_history("echo ran: !!", &history).unwrap(),
+            "echo ran: echo hello"
         );
     }
 

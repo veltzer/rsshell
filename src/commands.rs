@@ -120,7 +120,7 @@ fn execute_command(args: &[String], _config: &Config) -> i32 {
         "pwd" => cmd_pwd(),
         "echo" => cmd_echo(args),
         "type" => cmd_type(args),
-        "history" => cmd_history(),
+        "history" => cmd_history(args),
         _ => cmd_external(args),
     }
 }
@@ -327,18 +327,39 @@ fn cmd_type(args: &[String]) -> i32 {
     code
 }
 
-fn cmd_history() -> i32 {
-    let path = history_path();
-    match fs::read_to_string(&path) {
-        Ok(contents) => {
-            for (i, line) in contents.lines().enumerate() {
-                println!("{:>5}  {line}", i + 1);
+fn cmd_history(args: &[String]) -> i32 {
+    let subcommand = args.get(1).map(|s| s.as_str());
+    match subcommand {
+        Some("clear") => {
+            let path = history_path();
+            if path.exists()
+                && let Err(e) = fs::remove_file(&path)
+            {
+                eprintln!("history: cannot clear: {e}");
+                return 1;
             }
+            println!("History cleared.");
             0
         }
-        Err(_) => {
-            // No history file yet
-            0
+        Some(other) => {
+            eprintln!("history: unknown subcommand: {other}");
+            eprintln!("Usage: history [clear]");
+            1
+        }
+        None => {
+            let path = history_path();
+            match fs::read_to_string(&path) {
+                Ok(contents) => {
+                    for (i, line) in contents.lines().enumerate() {
+                        println!("{:>5}  {line}", i + 1);
+                    }
+                    0
+                }
+                Err(_) => {
+                    // No history file yet
+                    0
+                }
+            }
         }
     }
 }
