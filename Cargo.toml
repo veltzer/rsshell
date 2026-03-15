@@ -3,6 +3,9 @@ name = "rsshell"
 version = "0.1.5"
 edition = "2024"
 authors = ["Mark Veltzer <mark.veltzer@gmail.com>"]
+description = "Shell written in Rust"
+license = "MIT"
+repository = "https://github.com/veltzer/rsshell"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
