@@ -1,5 +1,13 @@
 # Installation
 
+## Install from crates.io
+
+```bash
+cargo install rsshell
+```
+
+This downloads, compiles, and installs the latest published version into `~/.cargo/bin/`.
+
 ## From source
 
 ```bash
