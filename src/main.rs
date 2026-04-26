@@ -39,6 +39,12 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
+    // SAFETY: done before spawning any threads
+    unsafe {
+        std::env::set_var("SHELL", "rsshell");
+        std::env::set_var("RSSHELL_VERSION", env!("CARGO_PKG_VERSION"));
+    }
+
     match cli.command {
         Some(Commands::InitConfig) => {
             std::process::exit(commands::cmd_init_config());

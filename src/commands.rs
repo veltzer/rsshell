@@ -133,6 +133,7 @@ fn execute_command(args: &[String], _config: &Config) -> i32 {
         "echo" => cmd_echo(&args, &redir),
         "type" => cmd_type(&args),
         "history" => cmd_history(&args),
+        "version" => { cmd_version(); 0 }
         _ => cmd_external(&args, &redir),
     }
 }
@@ -372,6 +373,7 @@ fn cmd_echo(args: &[String], redir: &Redirections) -> i32 {
 fn cmd_type(args: &[String]) -> i32 {
     let builtins = [
         "cd", "exit", "quit", "export", "unset", "source", ".", "pwd", "echo", "type", "history",
+        "version",
     ];
 
     let mut code = 0;
