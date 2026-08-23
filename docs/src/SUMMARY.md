@@ -6,3 +6,4 @@
 - [Features](./features.md)
 - [Configuration](./configuration.md)
 - [Platform Limitations](./platform-limitations.md)
+- [Release Info](release-info.md)
