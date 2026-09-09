@@ -127,7 +127,10 @@ fn test_execute_line_echo() {
 fn test_execute_line_nonexistent_command() {
     let config = Config::default();
     let mut vars = HashMap::new();
-    assert_eq!(execute_line("rsshell_nonexistent_cmd_xyz", &config, &mut vars), 127);
+    assert_eq!(
+        execute_line("rsshell_nonexistent_cmd_xyz", &config, &mut vars),
+        127
+    );
 }
 
 #[test]

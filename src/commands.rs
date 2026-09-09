@@ -22,11 +22,7 @@ pub fn run_startup_commands(config: &Config) {
 
 /// Execute a full input line (may contain pipes).
 /// Returns the exit code of the last command.
-pub fn execute_line(
-    line: &str,
-    config: &Config,
-    local_vars: &mut HashMap<String, String>,
-) -> i32 {
+pub fn execute_line(line: &str, config: &Config, local_vars: &mut HashMap<String, String>) -> i32 {
     let line = line.trim();
     if line.is_empty() || line.starts_with('#') {
         return 0;
@@ -133,7 +129,10 @@ fn execute_command(args: &[String], _config: &Config) -> i32 {
         "echo" => cmd_echo(&args, &redir),
         "type" => cmd_type(&args),
         "history" => cmd_history(&args),
-        "version" => { cmd_version(); 0 }
+        "version" => {
+            cmd_version();
+            0
+        }
         _ => cmd_external(&args, &redir),
     }
 }
@@ -218,9 +217,7 @@ fn execute_pipeline(segments: &[String], config: &Config) -> i32 {
             .spawn()
         {
             Ok(mut child) => {
-                if !is_last
-                    && let Some(child_stdout) = child.stdout.take()
-                {
+                if !is_last && let Some(child_stdout) = child.stdout.take() {
                     prev_stdout = Some(Stdio::from(child_stdout));
                 }
                 children.push(child);
@@ -267,7 +264,9 @@ fn cmd_cd(args: &[String]) -> i32 {
             // Update PWD
             if let Ok(cwd) = env::current_dir() {
                 // SAFETY: rsshell is single-threaded at this point
-                unsafe { env::set_var("PWD", cwd); }
+                unsafe {
+                    env::set_var("PWD", cwd);
+                }
             }
             0
         }
@@ -293,7 +292,9 @@ fn cmd_export(args: &[String]) -> i32 {
             let name = &arg[..eq_pos];
             let value = &arg[eq_pos + 1..];
             // SAFETY: rsshell is single-threaded at this point
-            unsafe { env::set_var(name, value); }
+            unsafe {
+                env::set_var(name, value);
+            }
         } else {
             // export without = just marks it (already in env)
         }
@@ -304,7 +305,9 @@ fn cmd_export(args: &[String]) -> i32 {
 fn cmd_unset(args: &[String]) -> i32 {
     for arg in &args[1..] {
         // SAFETY: rsshell is single-threaded at this point
-        unsafe { env::remove_var(arg); }
+        unsafe {
+            env::remove_var(arg);
+        }
     }
     0
 }
@@ -467,7 +470,11 @@ fn cmd_external(args: &[String], redir: &Redirections) -> i32 {
                 let file = if redir.stdout_append {
                     OpenOptions::new().create(true).append(true).open(&path)
                 } else {
-                    OpenOptions::new().create(true).truncate(true).write(true).open(&path)
+                    OpenOptions::new()
+                        .create(true)
+                        .truncate(true)
+                        .write(true)
+                        .open(&path)
                 };
                 match file {
                     Ok(f) => Stdio::from(f),
@@ -497,9 +504,9 @@ fn cmd_external(args: &[String], redir: &Redirections) -> i32 {
         .spawn()
     {
         Ok(mut child) => match child.wait() {
-            Ok(status) => status.code().unwrap_or_else(|| {
-                status.signal().map(|s| 128 + s).unwrap_or(1)
-            }),
+            Ok(status) => status
+                .code()
+                .unwrap_or_else(|| status.signal().map(|s| 128 + s).unwrap_or(1)),
             Err(e) => {
                 eprintln!("rsshell: wait error: {e}");
                 1
@@ -538,7 +545,11 @@ pub fn cmd_init_config() -> i32 {
 
 /// Print version information.
 pub fn cmd_version() {
-    println!("rsshell {} by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
+    println!(
+        "rsshell {} by {}",
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_AUTHORS")
+    );
     println!("GIT_DESCRIBE: {}", env!("GIT_DESCRIBE"));
     println!("GIT_SHA: {}", env!("GIT_SHA"));
     println!("GIT_BRANCH: {}", env!("GIT_BRANCH"));

@@ -44,12 +44,66 @@ impl Default for PromptConfig {
 fn default_prompt_parts() -> Vec<PromptPart> {
     let d = || "none".to_owned();
     vec![
-        PromptPart { text: "{user}".to_owned(), color: "green".to_owned(), bg: d(), bold: false, dim: false, italic: false, underline: false, strikethrough: false },
-        PromptPart { text: "@".to_owned(), color: d(), bg: d(), bold: false, dim: false, italic: false, underline: false, strikethrough: false },
-        PromptPart { text: "{host}".to_owned(), color: "green".to_owned(), bg: d(), bold: false, dim: false, italic: false, underline: false, strikethrough: false },
-        PromptPart { text: ":".to_owned(), color: d(), bg: d(), bold: false, dim: false, italic: false, underline: false, strikethrough: false },
-        PromptPart { text: "{cwd}".to_owned(), color: "blue".to_owned(), bg: d(), bold: true, dim: false, italic: false, underline: false, strikethrough: false },
-        PromptPart { text: "$ ".to_owned(), color: d(), bg: d(), bold: false, dim: false, italic: false, underline: false, strikethrough: false },
+        PromptPart {
+            text: "{user}".to_owned(),
+            color: "green".to_owned(),
+            bg: d(),
+            bold: false,
+            dim: false,
+            italic: false,
+            underline: false,
+            strikethrough: false,
+        },
+        PromptPart {
+            text: "@".to_owned(),
+            color: d(),
+            bg: d(),
+            bold: false,
+            dim: false,
+            italic: false,
+            underline: false,
+            strikethrough: false,
+        },
+        PromptPart {
+            text: "{host}".to_owned(),
+            color: "green".to_owned(),
+            bg: d(),
+            bold: false,
+            dim: false,
+            italic: false,
+            underline: false,
+            strikethrough: false,
+        },
+        PromptPart {
+            text: ":".to_owned(),
+            color: d(),
+            bg: d(),
+            bold: false,
+            dim: false,
+            italic: false,
+            underline: false,
+            strikethrough: false,
+        },
+        PromptPart {
+            text: "{cwd}".to_owned(),
+            color: "blue".to_owned(),
+            bg: d(),
+            bold: true,
+            dim: false,
+            italic: false,
+            underline: false,
+            strikethrough: false,
+        },
+        PromptPart {
+            text: "$ ".to_owned(),
+            color: d(),
+            bg: d(),
+            bold: false,
+            dim: false,
+            italic: false,
+            underline: false,
+            strikethrough: false,
+        },
     ]
 }
 
@@ -365,13 +419,21 @@ impl PromptVars {
 
         let git_dirty = if in_repo {
             let status = git_cmd(&["status", "--porcelain"]);
-            if status.is_empty() { "clean".to_owned() } else { "dirty".to_owned() }
+            if status.is_empty() {
+                "clean".to_owned()
+            } else {
+                "dirty".to_owned()
+            }
         } else {
             String::new()
         };
 
         let git_status = if in_repo {
-            if git_dirty == "dirty" { "*".to_owned() } else { String::new() }
+            if git_dirty == "dirty" {
+                "*".to_owned()
+            } else {
+                String::new()
+            }
         } else {
             String::new()
         };
@@ -477,7 +539,11 @@ pub fn build_prompt(config: &Config, last_exit_code: i32) -> String {
 
     if config.prompt.show_exit_code && last_exit_code != 0 {
         let code_text = format!("[{last_exit_code}] ");
-        prompt.push_str(&colorize_simple(&code_text, &config.prompt.exit_code_color, true));
+        prompt.push_str(&colorize_simple(
+            &code_text,
+            &config.prompt.exit_code_color,
+            true,
+        ));
     }
 
     for part in &config.prompt.parts {

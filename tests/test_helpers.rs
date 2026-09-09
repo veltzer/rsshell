@@ -78,10 +78,7 @@ fn test_parse_mixed_quotes() {
 
 #[test]
 fn test_parse_adjacent_quotes() {
-    assert_eq!(
-        parse_command_line(r#""hello""world""#),
-        vec!["helloworld"]
-    );
+    assert_eq!(parse_command_line(r#""hello""world""#), vec!["helloworld"]);
 }
 
 #[test]
@@ -184,11 +181,15 @@ fn test_split_pipes_empty() {
 #[test]
 fn test_expand_env_vars() {
     // SAFETY: test runs are single-threaded via nextest
-    unsafe { env::set_var("RSSHELL_TEST_VAR", "hello"); }
+    unsafe {
+        env::set_var("RSSHELL_TEST_VAR", "hello");
+    }
     assert_eq!(expand_env_vars("$RSSHELL_TEST_VAR"), "hello");
     assert_eq!(expand_env_vars("${RSSHELL_TEST_VAR}"), "hello");
     assert_eq!(expand_env_vars("say $RSSHELL_TEST_VAR!"), "say hello!");
-    unsafe { env::remove_var("RSSHELL_TEST_VAR"); }
+    unsafe {
+        env::remove_var("RSSHELL_TEST_VAR");
+    }
 }
 
 #[test]
@@ -208,9 +209,13 @@ fn test_expand_env_vars_braced_undefined() {
 
 #[test]
 fn test_expand_env_vars_adjacent_text() {
-    unsafe { env::set_var("RSSHELL_TEST_ADJ", "foo"); }
+    unsafe {
+        env::set_var("RSSHELL_TEST_ADJ", "foo");
+    }
     assert_eq!(expand_env_vars("${RSSHELL_TEST_ADJ}bar"), "foobar");
-    unsafe { env::remove_var("RSSHELL_TEST_ADJ"); }
+    unsafe {
+        env::remove_var("RSSHELL_TEST_ADJ");
+    }
 }
 
 #[test]
@@ -320,11 +325,11 @@ fn test_colorize_strikethrough() {
 fn test_colorize_all_styles() {
     let part = make_part("red", "blue", true, true, true, true, true);
     let result = colorize("test", &part);
-    assert!(result.contains("1"));  // bold
-    assert!(result.contains("2"));  // dim
-    assert!(result.contains("3"));  // italic
-    assert!(result.contains("4"));  // underline
-    assert!(result.contains("9"));  // strikethrough
+    assert!(result.contains("1")); // bold
+    assert!(result.contains("2")); // dim
+    assert!(result.contains("3")); // italic
+    assert!(result.contains("4")); // underline
+    assert!(result.contains("9")); // strikethrough
     assert!(result.contains("31")); // red fg
     assert!(result.contains("44")); // blue bg
 }
@@ -433,7 +438,10 @@ fn test_expand_history_empty() {
 #[test]
 fn test_expand_history_no_expansion() {
     let history = vec!["ls -la"];
-    assert_eq!(expand_history("echo hello", &history).unwrap(), "echo hello");
+    assert_eq!(
+        expand_history("echo hello", &history).unwrap(),
+        "echo hello"
+    );
     assert_eq!(expand_history("echo !", &history).unwrap(), "echo !");
 }
 
@@ -455,7 +463,10 @@ fn test_expand_history_mixed() {
 #[test]
 fn test_expand_history_bang_before_space() {
     let history = vec!["ls -la"];
-    assert_eq!(expand_history("echo ! hello", &history).unwrap(), "echo ! hello");
+    assert_eq!(
+        expand_history("echo ! hello", &history).unwrap(),
+        "echo ! hello"
+    );
 }
 
 #[test]
@@ -473,13 +484,19 @@ fn test_expand_history_negative_zero() {
 #[test]
 fn test_expand_history_prefix_with_dots() {
     let history = vec!["./configure --prefix=/usr", "make"];
-    assert_eq!(expand_history("!./conf", &history).unwrap(), "./configure --prefix=/usr");
+    assert_eq!(
+        expand_history("!./conf", &history).unwrap(),
+        "./configure --prefix=/usr"
+    );
 }
 
 #[test]
 fn test_expand_history_prefix_with_slash() {
     let history = vec!["/usr/bin/foo --bar", "echo done"];
-    assert_eq!(expand_history("!/usr", &history).unwrap(), "/usr/bin/foo --bar");
+    assert_eq!(
+        expand_history("!/usr", &history).unwrap(),
+        "/usr/bin/foo --bar"
+    );
 }
 
 // ── Config ──
@@ -600,7 +617,15 @@ fn test_parse_redirections_no_space() {
 
 #[test]
 fn test_parse_redirections_combined() {
-    let args = vec![s("cmd"), s("<"), s("in.txt"), s(">"), s("out.txt"), s("2>"), s("err.txt")];
+    let args = vec![
+        s("cmd"),
+        s("<"),
+        s("in.txt"),
+        s(">"),
+        s("out.txt"),
+        s("2>"),
+        s("err.txt"),
+    ];
     let (remaining, redir) = parse_redirections(&args).unwrap();
     assert_eq!(remaining, vec!["cmd"]);
     assert_eq!(redir.stdin_file.as_deref(), Some("in.txt"));

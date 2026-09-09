@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
-use rustyline::config::Builder as RlBuilder;
-use rustyline::history::DefaultHistory;
 use rustyline::Editor;
+use rustyline::config::Builder as RlBuilder;
 use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
 
 use rsshell::commands;
 use rsshell::helpers::{build_prompt, expand_history, history_path, load_config};
@@ -76,7 +76,9 @@ fn run_interactive() {
     // Apply env vars from config
     for (key, value) in &config.env {
         // SAFETY: done before spawning any threads
-        unsafe { std::env::set_var(key, value); }
+        unsafe {
+            std::env::set_var(key, value);
+        }
     }
 
     // Run startup commands
@@ -115,11 +117,8 @@ fn run_interactive() {
                 }
 
                 // Expand history references (!! !n !-n !prefix)
-                let history_entries: Vec<&str> = editor
-                    .history()
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect();
+                let history_entries: Vec<&str> =
+                    editor.history().iter().map(|s| s.as_str()).collect();
                 let expanded = match expand_history(trimmed, &history_entries) {
                     Ok(s) => s,
                     Err(e) => {
