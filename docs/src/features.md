@@ -18,7 +18,7 @@
 
 Commands can be piped together:
 
-```
+```text
 ls -la | grep ".rs" | sort
 cat file.txt | wc -l
 ```
@@ -35,7 +35,7 @@ gs = "git status"
 
 ## Variable expansion
 
-```
+```text
 export NAME=world
 echo "hello $NAME"
 echo "path is ${HOME}/bin"
@@ -43,7 +43,7 @@ echo "path is ${HOME}/bin"
 
 ## Glob expansion
 
-```
+```text
 ls *.txt
 cat src/**/*.rs
 ```
