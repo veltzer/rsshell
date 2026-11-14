@@ -7,7 +7,7 @@
 - Interactive REPL with line editing (rustyline)
 - Command history with persistence
 - Pipes (`cmd1 | cmd2 | cmd3`)
-- Built-in commands: `cd`, `pwd`, `echo`, `export`, `unset`, `source`, `type`, `history`, `exit`
+- Built-in commands: `cd`, `pwd`, `echo`, `export`, `unset`, `source`, `type`, `history`, `ssh`, `exit`
 - Alias expansion
 - Environment variable expansion (`$VAR`, `${VAR}`)
 - Tilde expansion (`~/path`)

@@ -129,6 +129,7 @@ fn execute_command(args: &[String], _config: &Config) -> i32 {
         "echo" => cmd_echo(&args, &redir),
         "type" => cmd_type(&args),
         "history" => cmd_history(&args),
+        "ssh" => cmd_ssh(&args),
         "version" => {
             cmd_version();
             0
@@ -376,7 +377,7 @@ fn cmd_echo(args: &[String], redir: &Redirections) -> i32 {
 fn cmd_type(args: &[String]) -> i32 {
     let builtins = [
         "cd", "exit", "quit", "export", "unset", "source", ".", "pwd", "echo", "type", "history",
-        "version",
+        "ssh", "version",
     ];
 
     let mut code = 0;
@@ -403,6 +404,16 @@ fn cmd_type(args: &[String]) -> i32 {
         }
     }
     code
+}
+
+fn cmd_ssh(args: &[String]) -> i32 {
+    if args.len() < 2 {
+        eprintln!(
+            "usage: ssh [-p port] [-l user] [-i key] [-F config] [-o opt] destination [command]"
+        );
+        return 2;
+    }
+    crate::ssh::run(&args[1..])
 }
 
 fn cmd_history(args: &[String]) -> i32 {
