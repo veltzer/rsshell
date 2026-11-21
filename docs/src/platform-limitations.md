@@ -1,6 +1,6 @@
 # Platform Limitations
 
-rsshell is designed as a **Unix shell** and currently only compiles and runs on Unix-like systems (Linux, macOS). This page documents all the issues that prevent Windows compilation.
+rsshell is designed as a **Unix shell** and currently only compiles and runs on Linux (macOS is no longer supported). This page documents all the issues that prevent Windows compilation.
 
 ## Summary
 
