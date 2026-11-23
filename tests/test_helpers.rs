@@ -1,33 +1,21 @@
 use std::env;
 
 use rsshell::helpers::{
-    Config, DEFAULT_CONFIG, PromptPart, PromptVars, bg_code, colorize, colorize_simple,
-    expand_env_vars, expand_globs, expand_history, expand_tilde, fg_code, parse_command_line,
-    parse_redirections, split_pipes,
+    Config, DEFAULT_CONFIG, PartLines, PartStyle, PromptPart, PromptVars, bg_code, colorize,
+    colorize_simple, expand_env_vars, expand_globs, expand_history, expand_tilde, fg_code,
+    parse_command_line, parse_redirections, split_pipes,
 };
 
 fn s(val: &str) -> String {
     val.to_owned()
 }
 
-fn make_part(
-    color: &str,
-    bg: &str,
-    bold: bool,
-    dim: bool,
-    italic: bool,
-    underline: bool,
-    strikethrough: bool,
-) -> PromptPart {
+fn make_part(color: &str, bg: &str, style: PartStyle) -> PromptPart {
     PromptPart {
         text: String::new(),
         color: color.to_owned(),
         bg: bg.to_owned(),
-        bold,
-        dim,
-        italic,
-        underline,
-        strikethrough,
+        style,
     }
 }
 
@@ -64,8 +52,8 @@ fn test_parse_escape() {
 
 #[test]
 fn test_parse_empty() {
-    assert!(parse_command_line("").is_empty());
-    assert!(parse_command_line("   ").is_empty());
+    assert_eq!(parse_command_line(""), [] as [std::string::String; 0]);
+    assert_eq!(parse_command_line("   "), [] as [std::string::String; 0]);
 }
 
 #[test]
@@ -172,8 +160,8 @@ fn test_split_pipes_escaped_pipe() {
 
 #[test]
 fn test_split_pipes_empty() {
-    assert!(split_pipes("").is_empty());
-    assert!(split_pipes("   ").is_empty());
+    assert_eq!(split_pipes(""), [] as [std::string::String; 0]);
+    assert_eq!(split_pipes("   "), [] as [std::string::String; 0]);
 }
 
 // ── expand_env_vars ──
@@ -256,13 +244,13 @@ fn test_bg_code() {
 
 #[test]
 fn test_colorize_none() {
-    let part = make_part("none", "none", false, false, false, false, false);
+    let part = make_part("none", "none", PartStyle::default());
     assert_eq!(colorize("hello", &part), "hello");
 }
 
 #[test]
 fn test_colorize_with_color() {
-    let part = make_part("red", "none", false, false, false, false, false);
+    let part = make_part("red", "none", PartStyle::default());
     let result = colorize("hello", &part);
     assert!(result.contains("\x1b[31m"));
     assert!(result.contains("hello"));
@@ -271,7 +259,14 @@ fn test_colorize_with_color() {
 
 #[test]
 fn test_colorize_bold() {
-    let part = make_part("none", "none", true, false, false, false, false);
+    let part = make_part(
+        "none",
+        "none",
+        PartStyle {
+            bold: true,
+            ..PartStyle::default()
+        },
+    );
     let result = colorize("hello", &part);
     assert!(result.contains("\x1b[1m"));
     assert!(result.contains("hello"));
@@ -279,7 +274,14 @@ fn test_colorize_bold() {
 
 #[test]
 fn test_colorize_bold_and_color() {
-    let part = make_part("green", "none", true, false, false, false, false);
+    let part = make_part(
+        "green",
+        "none",
+        PartStyle {
+            bold: true,
+            ..PartStyle::default()
+        },
+    );
     let result = colorize("hello", &part);
     assert!(result.contains("\x1b[1;32m"));
     assert!(result.contains("hello"));
@@ -287,14 +289,25 @@ fn test_colorize_bold_and_color() {
 
 #[test]
 fn test_colorize_italic_underline() {
-    let part = make_part("none", "none", false, false, true, true, false);
+    let part = make_part(
+        "none",
+        "none",
+        PartStyle {
+            italic: true,
+            lines: PartLines {
+                underline: true,
+                ..PartLines::default()
+            },
+            ..PartStyle::default()
+        },
+    );
     let result = colorize("hello", &part);
     assert!(result.contains("\x1b[3;4m"));
 }
 
 #[test]
 fn test_colorize_bg() {
-    let part = make_part("white", "blue", false, false, false, false, false);
+    let part = make_part("white", "blue", PartStyle::default());
     let result = colorize("hello", &part);
     assert!(result.contains("37"));
     assert!(result.contains("44"));
@@ -302,34 +315,63 @@ fn test_colorize_bg() {
 
 #[test]
 fn test_colorize_bright() {
-    let part = make_part("bright_cyan", "none", false, false, false, false, false);
+    let part = make_part("bright_cyan", "none", PartStyle::default());
     let result = colorize("hello", &part);
     assert!(result.contains("\x1b[96m"));
 }
 
 #[test]
 fn test_colorize_dim() {
-    let part = make_part("none", "none", false, true, false, false, false);
+    let part = make_part(
+        "none",
+        "none",
+        PartStyle {
+            dim: true,
+            ..PartStyle::default()
+        },
+    );
     let result = colorize("test", &part);
     assert!(result.contains("\x1b[2m"));
 }
 
 #[test]
 fn test_colorize_strikethrough() {
-    let part = make_part("none", "none", false, false, false, false, true);
+    let part = make_part(
+        "none",
+        "none",
+        PartStyle {
+            lines: PartLines {
+                strikethrough: true,
+                ..PartLines::default()
+            },
+            ..PartStyle::default()
+        },
+    );
     let result = colorize("test", &part);
     assert!(result.contains("\x1b[9m"));
 }
 
 #[test]
 fn test_colorize_all_styles() {
-    let part = make_part("red", "blue", true, true, true, true, true);
+    let part = make_part(
+        "red",
+        "blue",
+        PartStyle {
+            bold: true,
+            dim: true,
+            italic: true,
+            lines: PartLines {
+                underline: true,
+                strikethrough: true,
+            },
+        },
+    );
     let result = colorize("test", &part);
-    assert!(result.contains("1")); // bold
-    assert!(result.contains("2")); // dim
-    assert!(result.contains("3")); // italic
-    assert!(result.contains("4")); // underline
-    assert!(result.contains("9")); // strikethrough
+    assert!(result.contains('1')); // bold
+    assert!(result.contains('2')); // dim
+    assert!(result.contains('3')); // italic
+    assert!(result.contains('4')); // underline
+    assert!(result.contains('9')); // strikethrough
     assert!(result.contains("31")); // red fg
     assert!(result.contains("44")); // blue bg
 }
@@ -352,7 +394,7 @@ fn test_colorize_simple_bold_only() {
 #[test]
 fn test_colorize_simple_color_and_bold() {
     let result = colorize_simple("hello", "red", true);
-    assert!(result.contains("1"));
+    assert!(result.contains('1'));
     assert!(result.contains("31"));
     assert!(result.contains("hello"));
 }
@@ -519,7 +561,7 @@ fn test_default_config_values() {
     assert!(config.history.ignore_space);
     assert!(config.aliases.is_empty());
     assert!(config.env.is_empty());
-    assert!(config.startup.commands.is_empty());
+    assert_eq!(config.startup.commands, [] as [std::string::String; 0]);
 }
 
 #[test]

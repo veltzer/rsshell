@@ -48,61 +48,40 @@ fn default_prompt_parts() -> Vec<PromptPart> {
             text: "{user}".to_owned(),
             color: "green".to_owned(),
             bg: d(),
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-            strikethrough: false,
+            style: PartStyle::default(),
         },
         PromptPart {
             text: "@".to_owned(),
             color: d(),
             bg: d(),
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-            strikethrough: false,
+            style: PartStyle::default(),
         },
         PromptPart {
             text: "{host}".to_owned(),
             color: "green".to_owned(),
             bg: d(),
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-            strikethrough: false,
+            style: PartStyle::default(),
         },
         PromptPart {
             text: ":".to_owned(),
             color: d(),
             bg: d(),
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-            strikethrough: false,
+            style: PartStyle::default(),
         },
         PromptPart {
             text: "{cwd}".to_owned(),
             color: "blue".to_owned(),
             bg: d(),
-            bold: true,
-            dim: false,
-            italic: false,
-            underline: false,
-            strikethrough: false,
+            style: PartStyle {
+                bold: true,
+                ..PartStyle::default()
+            },
         },
         PromptPart {
             text: "$ ".to_owned(),
             color: d(),
             bg: d(),
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-            strikethrough: false,
+            style: PartStyle::default(),
         },
     ]
 }
@@ -118,12 +97,26 @@ pub struct PromptPart {
     pub color: String,
     #[serde(default = "default_color")]
     pub bg: String,
+    #[serde(flatten)]
+    pub style: PartStyle,
+}
+
+/// Text attributes of a prompt part.
+#[derive(Debug, Deserialize, Clone, Copy, Default)]
+pub struct PartStyle {
     #[serde(default)]
     pub bold: bool,
     #[serde(default)]
     pub dim: bool,
     #[serde(default)]
     pub italic: bool,
+    #[serde(flatten)]
+    pub lines: PartLines,
+}
+
+/// Line decorations of a prompt part.
+#[derive(Debug, Deserialize, Clone, Copy, Default)]
+pub struct PartLines {
     #[serde(default)]
     pub underline: bool,
     #[serde(default)]
@@ -251,6 +244,7 @@ ignore_space = true
 "#;
 
 /// Return the path to the config directory: ~/.config/rsshell/
+#[must_use]
 pub fn config_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -258,16 +252,19 @@ pub fn config_dir() -> PathBuf {
 }
 
 /// Return the path to the config file: ~/.config/rsshell/config.toml
+#[must_use]
 pub fn config_path() -> PathBuf {
     config_dir().join("config.toml")
 }
 
 /// Return the path to the history file: ~/.config/rsshell/history.txt
+#[must_use]
 pub fn history_path() -> PathBuf {
     config_dir().join("history.txt")
 }
 
 /// Load config from disk, returning default if not found.
+#[must_use]
 pub fn load_config() -> Config {
     let path = config_path();
     if path.exists() {
@@ -279,6 +276,7 @@ pub fn load_config() -> Config {
 }
 
 /// Map a foreground color name to its ANSI code.
+#[must_use]
 pub fn fg_code(name: &str) -> Option<&'static str> {
     match name {
         "black" => Some("30"),
@@ -302,6 +300,7 @@ pub fn fg_code(name: &str) -> Option<&'static str> {
 }
 
 /// Map a background color name to its ANSI code.
+#[must_use]
 pub fn bg_code(name: &str) -> Option<&'static str> {
     match name {
         "black" => Some("40"),
@@ -325,29 +324,35 @@ pub fn bg_code(name: &str) -> Option<&'static str> {
 }
 
 /// Wrap text in ANSI escape sequences for color and style.
+#[must_use]
 pub fn colorize(text: &str, part: &PromptPart) -> String {
     let fg = fg_code(&part.color);
     let bg = bg_code(&part.bg);
-    let has_style = part.bold || part.dim || part.italic || part.underline || part.strikethrough;
+    let style = part.style;
+    let has_style = style.bold
+        || style.dim
+        || style.italic
+        || style.lines.underline
+        || style.lines.strikethrough;
 
     if fg.is_none() && bg.is_none() && !has_style {
         return text.to_owned();
     }
 
     let mut params = Vec::new();
-    if part.bold {
+    if style.bold {
         params.push("1");
     }
-    if part.dim {
+    if style.dim {
         params.push("2");
     }
-    if part.italic {
+    if style.italic {
         params.push("3");
     }
-    if part.underline {
+    if style.lines.underline {
         params.push("4");
     }
-    if part.strikethrough {
+    if style.lines.strikethrough {
         params.push("9");
     }
     if let Some(c) = fg {
@@ -361,6 +366,7 @@ pub fn colorize(text: &str, part: &PromptPart) -> String {
 }
 
 /// Wrap text with a simple color + bold (used for exit code display).
+#[must_use]
 pub fn colorize_simple(text: &str, color: &str, bold: bool) -> String {
     let code = fg_code(color);
     if code.is_none() && !bold {
@@ -400,8 +406,9 @@ impl PromptVars {
     fn collect() -> Self {
         let user = env::var("USER").unwrap_or_else(|_| "user".to_owned());
         let host = hostname();
-        let cwd = env::current_dir()
-            .map(|p| {
+        let cwd = env::current_dir().map_or_else(
+            |_| "?".to_owned(),
+            |p| {
                 let home = dirs::home_dir().unwrap_or_default();
                 if let Ok(rest) = p.strip_prefix(&home) {
                     let s = format!("~/{}", rest.display());
@@ -409,8 +416,8 @@ impl PromptVars {
                 } else {
                     p.display().to_string()
                 }
-            })
-            .unwrap_or_else(|_| "?".to_owned());
+            },
+        );
         let cwd = if cwd == "~/" { "~".to_owned() } else { cwd };
         let cwd_basename = cwd.rsplit('/').next().unwrap_or(&cwd).to_owned();
 
@@ -483,6 +490,7 @@ impl PromptVars {
         }
     }
 
+    #[must_use]
     pub fn expand(&self, text: &str) -> String {
         text.replace("{user}", &self.user)
             .replace("{host}", &self.host)
@@ -521,17 +529,20 @@ fn chrono_now() -> (String, String) {
         .output()
         .ok()
         .filter(|o| o.status.success())
-        .map(|o| {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_owned();
-            let mut parts = s.splitn(2, ' ');
-            let date = parts.next().unwrap_or("").to_owned();
-            let time = parts.next().unwrap_or("").to_owned();
-            (date, time)
-        })
-        .unwrap_or_else(|| (String::new(), String::new()))
+        .map_or_else(
+            || (String::new(), String::new()),
+            |o| {
+                let s = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+                let mut parts = s.splitn(2, ' ');
+                let date = parts.next().unwrap_or("").to_owned();
+                let time = parts.next().unwrap_or("").to_owned();
+                (date, time)
+            },
+        )
 }
 
 /// Build the prompt string from the configured parts.
+#[must_use]
 pub fn build_prompt(config: &Config, last_exit_code: i32) -> String {
     let vars = PromptVars::collect();
 
@@ -565,6 +576,9 @@ fn hostname() -> String {
 /// Expand history references in the input line.
 /// Supports: !! (last command), !n (nth entry), !-n (nth from end), !prefix (last match).
 /// Returns Ok(expanded) or Err(message) if the reference is invalid.
+///
+/// # Errors
+/// Returns a message when a history reference matches no entry.
 pub fn expand_history(input: &str, history: &[&str]) -> Result<String, String> {
     if !input.contains('!') {
         return Ok(input.to_owned());
@@ -607,7 +621,9 @@ pub fn expand_history(input: &str, history: &[&str]) -> Result<String, String> {
                         break;
                     }
                 }
-                let n: usize = num_str.parse().unwrap();
+                let Ok(n) = num_str.parse::<usize>() else {
+                    return Err(format!("!{num_str}: event not found"));
+                };
                 if n == 0 || n > history.len() {
                     return Err(format!("!{n}: event not found"));
                 }
@@ -628,7 +644,9 @@ pub fn expand_history(input: &str, history: &[&str]) -> Result<String, String> {
                 if num_str.is_empty() {
                     return Err("!-: event not found".to_owned());
                 }
-                let n: usize = num_str.parse().unwrap();
+                let Ok(n) = num_str.parse::<usize>() else {
+                    return Err(format!("!-{num_str}: event not found"));
+                };
                 if n == 0 || n > history.len() {
                     return Err(format!("!-{n}: event not found"));
                 }
@@ -674,6 +692,9 @@ pub struct Redirections {
 
 impl Redirections {
     /// Open the configured stdin as a Stdio, or return the given default.
+    ///
+    /// # Errors
+    /// Returns a message when the redirection target cannot be opened.
     pub fn stdin_stdio(&self, default: Stdio) -> Result<Stdio, String> {
         match &self.stdin_file {
             Some(path) => {
@@ -687,6 +708,9 @@ impl Redirections {
     }
 
     /// Open the configured stdout as a Stdio, or return the given default.
+    ///
+    /// # Errors
+    /// Returns a message when the redirection target cannot be opened.
     pub fn stdout_stdio(&self, default: Stdio) -> Result<Stdio, String> {
         match &self.stdout_file {
             Some(path) => {
@@ -704,6 +728,9 @@ impl Redirections {
     }
 
     /// Open the configured stderr as a Stdio, or return the given default.
+    ///
+    /// # Errors
+    /// Returns a message when the redirection target cannot be opened.
     pub fn stderr_stdio(&self, default: Stdio) -> Result<Stdio, String> {
         if self.stderr_to_stdout {
             // 2>&1 is handled at the Command level by the caller
@@ -727,6 +754,9 @@ impl Redirections {
 
 /// Extract redirections from a list of args, returning the remaining args and the redirections.
 /// Supports: < file, > file, >> file, 2> file, 2>> file, 2>&1
+///
+/// # Errors
+/// Returns a message when a redirection operator has no target.
 pub fn parse_redirections(args: &[String]) -> Result<(Vec<String>, Redirections), String> {
     let mut remaining = Vec::new();
     let mut redir = Redirections::default();
@@ -801,11 +831,11 @@ pub fn parse_redirections(args: &[String]) -> Result<(Vec<String>, Redirections)
                         redir.stdin_file = Some(path.to_owned());
                     }
                 } else if let Some(path) = arg.strip_prefix("2>>") {
-                    if !path.is_empty() {
+                    if path.is_empty() {
+                        remaining.push(arg.clone());
+                    } else {
                         redir.stderr_file = Some(path.to_owned());
                         redir.stderr_append = true;
-                    } else {
-                        remaining.push(arg.clone());
                     }
                 } else if let Some(path) = arg.strip_prefix("2>") {
                     if path == "&1" {
@@ -828,6 +858,7 @@ pub fn parse_redirections(args: &[String]) -> Result<(Vec<String>, Redirections)
 }
 
 /// Parse a command line into arguments, handling single and double quotes.
+#[must_use]
 pub fn parse_command_line(input: &str) -> Vec<String> {
     let mut args = Vec::new();
     let mut current = String::new();
@@ -872,21 +903,19 @@ pub fn parse_command_line(input: &str) -> Vec<String> {
 }
 
 /// Expand tilde in a path string.
+#[must_use]
 pub fn expand_tilde(path: &str) -> String {
     if path == "~" {
-        dirs::home_dir()
-            .map(|h| h.display().to_string())
-            .unwrap_or_else(|| path.to_owned())
+        dirs::home_dir().map_or_else(|| path.to_owned(), |h| h.display().to_string())
     } else if let Some(rest) = path.strip_prefix("~/") {
-        dirs::home_dir()
-            .map(|h| format!("{}/{rest}", h.display()))
-            .unwrap_or_else(|| path.to_owned())
+        dirs::home_dir().map_or_else(|| path.to_owned(), |h| format!("{}/{rest}", h.display()))
     } else {
         path.to_owned()
     }
 }
 
 /// Expand environment variables in the form $VAR or ${VAR}.
+#[must_use]
 pub fn expand_env_vars(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut chars = input.chars().peekable();
@@ -922,6 +951,7 @@ pub fn expand_env_vars(input: &str) -> String {
 }
 
 /// Expand glob patterns in arguments.
+#[must_use]
 pub fn expand_globs(args: &[String]) -> Vec<String> {
     let mut expanded = Vec::new();
     for arg in args {
@@ -947,6 +977,7 @@ pub fn expand_globs(args: &[String]) -> Vec<String> {
 }
 
 /// Split a command line by pipes, returning each segment.
+#[must_use]
 pub fn split_pipes(input: &str) -> Vec<String> {
     let mut segments = Vec::new();
     let mut current = String::new();

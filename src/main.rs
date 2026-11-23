@@ -117,8 +117,11 @@ fn run_interactive() {
                 }
 
                 // Expand history references (!! !n !-n !prefix)
-                let history_entries: Vec<&str> =
-                    editor.history().iter().map(|s| s.as_str()).collect();
+                let history_entries: Vec<&str> = editor
+                    .history()
+                    .iter()
+                    .map(std::string::String::as_str)
+                    .collect();
                 let expanded = match expand_history(trimmed, &history_entries) {
                     Ok(s) => s,
                     Err(e) => {
@@ -151,7 +154,6 @@ fn run_interactive() {
             }
             Err(ReadlineError::Interrupted) => {
                 // Ctrl-C: just print a new prompt
-                continue;
             }
             Err(ReadlineError::Eof) => {
                 // Ctrl-D: exit

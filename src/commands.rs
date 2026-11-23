@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::fs::{self, OpenOptions};
+use std::hash::BuildHasher;
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -22,7 +23,11 @@ pub fn run_startup_commands(config: &Config) {
 
 /// Execute a full input line (may contain pipes).
 /// Returns the exit code of the last command.
-pub fn execute_line(line: &str, config: &Config, local_vars: &mut HashMap<String, String>) -> i32 {
+pub fn execute_line<S: BuildHasher>(
+    line: &str,
+    config: &Config,
+    local_vars: &mut HashMap<String, String, S>,
+) -> i32 {
     let line = line.trim();
     if line.is_empty() || line.starts_with('#') {
         return 0;
@@ -57,6 +62,7 @@ pub fn execute_line(line: &str, config: &Config, local_vars: &mut HashMap<String
 }
 
 /// Parse a variable assignment like VAR=value.
+#[must_use]
 pub fn parse_variable_assignment(line: &str) -> Option<(String, String)> {
     if let Some(eq_pos) = line.find('=') {
         let name = &line[..eq_pos];
@@ -70,7 +76,8 @@ pub fn parse_variable_assignment(line: &str) -> Option<(String, String)> {
 }
 
 /// Expand local shell variables.
-pub fn expand_local_vars(input: &str, vars: &HashMap<String, String>) -> String {
+#[must_use]
+pub fn expand_local_vars<S: BuildHasher>(input: &str, vars: &HashMap<String, String, S>) -> String {
     let mut result = input.to_owned();
     for (name, value) in vars {
         result = result.replace(&format!("${name}"), value);
@@ -80,6 +87,7 @@ pub fn expand_local_vars(input: &str, vars: &HashMap<String, String>) -> String 
 }
 
 /// Expand aliases (first word only, non-recursive).
+#[must_use]
 pub fn expand_aliases(line: &str, config: &Config) -> String {
     let trimmed = line.trim();
     let first_space = trimmed.find(' ');
@@ -236,7 +244,7 @@ fn execute_pipeline(segments: &[String], config: &Config) -> i32 {
             Ok(status) => {
                 last_code = status.code().unwrap_or_else(|| {
                     // If killed by signal, return 128 + signal number
-                    status.signal().map(|s| 128 + s).unwrap_or(1)
+                    status.signal().map_or(1, |s| 128 + s)
                 });
             }
             Err(e) => {
@@ -252,9 +260,7 @@ fn execute_pipeline(segments: &[String], config: &Config) -> i32 {
 
 fn cmd_cd(args: &[String]) -> i32 {
     let target = if args.len() < 2 {
-        dirs::home_dir()
-            .map(|h| h.display().to_string())
-            .unwrap_or_else(|| ".".to_owned())
+        dirs::home_dir().map_or_else(|| ".".to_owned(), |h| h.display().to_string())
     } else {
         expand_tilde(&args[1])
     };
@@ -406,7 +412,7 @@ fn cmd_type(args: &[String]) -> i32 {
 }
 
 fn cmd_history(args: &[String]) -> i32 {
-    let subcommand = args.get(1).map(|s| s.as_str());
+    let subcommand = args.get(1).map(std::string::String::as_str);
     match subcommand {
         Some("clear") => {
             let path = history_path();
@@ -506,7 +512,7 @@ fn cmd_external(args: &[String], redir: &Redirections) -> i32 {
         Ok(mut child) => match child.wait() {
             Ok(status) => status
                 .code()
-                .unwrap_or_else(|| status.signal().map(|s| 128 + s).unwrap_or(1)),
+                .unwrap_or_else(|| status.signal().map_or(1, |s| 128 + s)),
             Err(e) => {
                 eprintln!("rsshell: wait error: {e}");
                 1
@@ -520,6 +526,7 @@ fn cmd_external(args: &[String], redir: &Redirections) -> i32 {
 }
 
 /// Initialize the config file.
+#[must_use]
 pub fn cmd_init_config() -> i32 {
     let dir = config_dir();
     if let Err(e) = fs::create_dir_all(&dir) {
