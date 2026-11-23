@@ -12,38 +12,9 @@ all-features = true
 # carry the advisory id and the reason it cannot be fixed yet.
 [advisories]
 ignore = [
-    # google-apis-rs (google-people1, google-apis-common) is unmaintained and
-    # there is no maintained Rust client for the Google People API. rscontacts
-    # keeps it until its API layer is rewritten over reqwest. rscontacts only.
-    { id = "RUSTSEC-2025-0066", reason = "no maintained replacement for google-people1; rewrite over reqwest pending" },
-    # ttf-parser has no maintained successor yet. It reaches the fleet only
-    # through upstream crates that pin it: eframe/winit's Wayland decorations
-    # (ab_glyph) in rsear and rsimagetag, and fontdb/usvg in rsslide. Drop
-    # this entry when those upstreams move off it.
-    { id = "RUSTSEC-2026-0192", reason = "pinned by eframe (winit/sctk-adwaita/ab_glyph) and fontdb/usvg; no upstream release without it" },
-    # zvariant, zvariant_derive and zbus_names were merged into zbus 6 and
-    # are no longer maintained standalone. They reach the fleet only through
-    # eframe's accessibility stack (accesskit_unix/atspi on zbus 5) in rsear
-    # and rsimagetag; eframe 0.37 still uses them. Drop these entries when
-    # accesskit moves to zbus 6.
-    { id = "RUSTSEC-2026-0370", reason = "zvariant via eframe/accesskit_unix (zbus 5); no upstream release on zbus 6 yet" },
-    { id = "RUSTSEC-2026-0371", reason = "zbus_names via eframe/accesskit_unix (zbus 5); no upstream release on zbus 6 yet" },
-    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive via eframe/accesskit_unix (zbus 5); no upstream release on zbus 6 yet" },
-    # rustybuzz, same situation: pulled in by krilla and usvg in rsslide.
-    { id = "RUSTSEC-2026-0206", reason = "pinned by krilla and usvg; no upstream release without it" },
-    # bincode 1 is what syntect's dump-load feature deserialises its bundled
-    # syntaxes with; rspandoc, rssite and rsslide need those syntaxes. Drop
-    # when syntect moves.
-    { id = "RUSTSEC-2025-0141", reason = "pinned by syntect's dump-load feature; no upstream release without it" },
-    # paste is a proc-macro rav1e (rssite's AVIF encoder, through image and
-    # ravif) expands at compile time; rav1e 0.8 has no release without it.
-    # rssite only. Drop when rav1e moves to pastey or drops it.
-    { id = "RUSTSEC-2024-0436", reason = "paste, a compile-time macro of rav1e (rssite's AVIF encoder); no rav1e release without it" },
     # clap 2 (with ansi_term and atty) is a build dependency of bindgen 0.59,
     # which fluidlite-sys pins. Build-time only, rsear only. Drop when
     # fluidlite-sys moves to a current bindgen.
-    { id = "RUSTSEC-2021-0139", reason = "ansi_term via clap 2 via bindgen 0.59, a build dependency pinned by fluidlite-sys" },
-    { id = "RUSTSEC-2024-0375", reason = "atty via clap 2 via bindgen 0.59, a build dependency pinned by fluidlite-sys" },
     { id = "RUSTSEC-2026-0542", reason = "humantime via env_logger 0.9 via bindgen 0.59, a build dependency pinned by fluidlite-sys" },
     # chrono, chrono-tz and chrono-tz-build were declared unmaintained
     # together (chronotope/chrono#1768); no version is unaffected. tera 1.20
