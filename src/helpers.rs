@@ -147,11 +147,11 @@ impl Default for HistoryConfig {
     }
 }
 
-fn default_max_entries() -> usize {
+const fn default_max_entries() -> usize {
     10000
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
@@ -410,12 +410,13 @@ impl PromptVars {
             |_| "?".to_owned(),
             |p| {
                 let home = dirs::home_dir().unwrap_or_default();
-                if let Ok(rest) = p.strip_prefix(&home) {
-                    let s = format!("~/{}", rest.display());
-                    s.trim_end_matches('/').to_owned()
-                } else {
-                    p.display().to_string()
-                }
+                p.strip_prefix(&home).map_or_else(
+                    |_| p.display().to_string(),
+                    |rest| {
+                        let s = format!("~/{}", rest.display());
+                        s.trim_end_matches('/').to_owned()
+                    },
+                )
             },
         );
         let cwd = if cwd == "~/" { "~".to_owned() } else { cwd };
@@ -696,15 +697,12 @@ impl Redirections {
     /// # Errors
     /// Returns a message when the redirection target cannot be opened.
     pub fn stdin_stdio(&self, default: Stdio) -> Result<Stdio, String> {
-        match &self.stdin_file {
-            Some(path) => {
-                let path = expand_tilde(path);
-                File::open(&path)
-                    .map(Stdio::from)
-                    .map_err(|e| format!("rsshell: {path}: {e}"))
-            }
-            None => Ok(default),
-        }
+        self.stdin_file.as_ref().map_or(Ok(default), |path| {
+            let path = expand_tilde(path);
+            File::open(&path)
+                .map(Stdio::from)
+                .map_err(|e| format!("rsshell: {path}: {e}"))
+        })
     }
 
     /// Open the configured stdout as a Stdio, or return the given default.
@@ -712,19 +710,16 @@ impl Redirections {
     /// # Errors
     /// Returns a message when the redirection target cannot be opened.
     pub fn stdout_stdio(&self, default: Stdio) -> Result<Stdio, String> {
-        match &self.stdout_file {
-            Some(path) => {
-                let path = expand_tilde(path);
-                let file = if self.stdout_append {
-                    OpenOptions::new().create(true).append(true).open(&path)
-                } else {
-                    File::create(&path)
-                };
-                file.map(Stdio::from)
-                    .map_err(|e| format!("rsshell: {path}: {e}"))
-            }
-            None => Ok(default),
-        }
+        self.stdout_file.as_ref().map_or(Ok(default), |path| {
+            let path = expand_tilde(path);
+            let file = if self.stdout_append {
+                OpenOptions::new().create(true).append(true).open(&path)
+            } else {
+                File::create(&path)
+            };
+            file.map(Stdio::from)
+                .map_err(|e| format!("rsshell: {path}: {e}"))
+        })
     }
 
     /// Open the configured stderr as a Stdio, or return the given default.
@@ -736,19 +731,16 @@ impl Redirections {
             // 2>&1 is handled at the Command level by the caller
             return Ok(default);
         }
-        match &self.stderr_file {
-            Some(path) => {
-                let path = expand_tilde(path);
-                let file = if self.stderr_append {
-                    OpenOptions::new().create(true).append(true).open(&path)
-                } else {
-                    File::create(&path)
-                };
-                file.map(Stdio::from)
-                    .map_err(|e| format!("rsshell: {path}: {e}"))
-            }
-            None => Ok(default),
-        }
+        self.stderr_file.as_ref().map_or(Ok(default), |path| {
+            let path = expand_tilde(path);
+            let file = if self.stderr_append {
+                OpenOptions::new().create(true).append(true).open(&path)
+            } else {
+                File::create(&path)
+            };
+            file.map(Stdio::from)
+                .map_err(|e| format!("rsshell: {path}: {e}"))
+        })
     }
 }
 

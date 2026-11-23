@@ -91,19 +91,17 @@ pub fn expand_local_vars<S: BuildHasher>(input: &str, vars: &HashMap<String, Str
 pub fn expand_aliases(line: &str, config: &Config) -> String {
     let trimmed = line.trim();
     let first_space = trimmed.find(' ');
-    let first_word = match first_space {
-        Some(pos) => &trimmed[..pos],
-        None => trimmed,
-    };
+    let first_word = first_space.map_or(trimmed, |pos| &trimmed[..pos]);
 
-    if let Some(expansion) = config.aliases.get(first_word) {
-        match first_space {
-            Some(pos) => format!("{expansion}{}", &trimmed[pos..]),
-            None => expansion.clone(),
-        }
-    } else {
-        line.to_owned()
-    }
+    config.aliases.get(first_word).map_or_else(
+        || line.to_owned(),
+        |expansion| {
+            first_space.map_or_else(
+                || expansion.clone(),
+                |pos| format!("{expansion}{}", &trimmed[pos..]),
+            )
+        },
+    )
 }
 
 /// Execute a single command (no pipes). Returns exit code.
@@ -179,7 +177,7 @@ fn execute_pipeline(segments: &[String], config: &Config) -> i32 {
         let is_last = i == segments.len() - 1;
 
         // stdin: from pipe or redirection (only first segment can have < redirection)
-        let default_stdin = prev_stdout.take().unwrap_or(Stdio::inherit());
+        let default_stdin = prev_stdout.take().unwrap_or_else(Stdio::inherit);
         let stdin = if is_first {
             match redir.stdin_stdio(default_stdin) {
                 Ok(s) => s,
@@ -372,11 +370,10 @@ fn cmd_echo(args: &[String], redir: &Redirections) -> i32 {
             eprintln!("rsshell: {path}: {e}");
             return 1;
         }
-        0
     } else {
         println!("{output}");
-        0
     }
+    0
 }
 
 fn cmd_type(args: &[String]) -> i32 {
@@ -432,18 +429,13 @@ fn cmd_history(args: &[String]) -> i32 {
         }
         None => {
             let path = history_path();
-            match fs::read_to_string(&path) {
-                Ok(contents) => {
-                    for (i, line) in contents.lines().enumerate() {
-                        println!("{:>5}  {line}", i + 1);
-                    }
-                    0
-                }
-                Err(_) => {
-                    // No history file yet
-                    0
+            // No history file yet is not an error.
+            if let Ok(contents) = fs::read_to_string(&path) {
+                for (i, line) in contents.lines().enumerate() {
+                    println!("{:>5}  {line}", i + 1);
                 }
             }
+            0
         }
     }
 }
