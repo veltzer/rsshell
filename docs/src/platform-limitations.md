@@ -5,7 +5,7 @@ rsshell is designed as a **Unix shell** and currently only compiles and runs on 
 ## Summary
 
 | Category | Count | Severity |
-|----------|-------|----------|
+| ---------- | ------- | ---------- |
 | Unix-only crate dependency | 1 | Blocker |
 | Unix system calls | 1 | Blocker |
 | Unix signal handling | 2 | Blocker |

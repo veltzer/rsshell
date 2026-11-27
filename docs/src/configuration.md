@@ -41,7 +41,7 @@ text = "$ "
 #### Variables
 
 | Variable | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | `{user}` | Current username |
 | `{host}` | Hostname |
 | `{cwd}` | Current working directory (`~` for home) |
@@ -71,7 +71,7 @@ Both `color` (foreground) and `bg` (background) accept any of the above.
 #### Styles
 
 | Style | Description |
-|-------|-------------|
+| ------- | ------------- |
 | `bold = true` | Bold text |
 | `dim = true` | Dimmed text |
 | `italic = true` | Italic text |

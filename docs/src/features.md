@@ -3,7 +3,7 @@
 ## Built-in commands
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `cd [dir]` | Change directory (defaults to home) |
 | `pwd` | Print working directory |
 | `echo [args...]` | Print arguments |
