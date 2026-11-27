@@ -168,13 +168,14 @@ fn test_split_pipes_empty() {
 
 #[test]
 fn test_expand_env_vars() {
-    // SAFETY: test runs are single-threaded via nextest
+    // SAFETY: nextest runs each test in its own process.
     unsafe {
         env::set_var("RSSHELL_TEST_VAR", "hello");
     }
     assert_eq!(expand_env_vars("$RSSHELL_TEST_VAR"), "hello");
     assert_eq!(expand_env_vars("${RSSHELL_TEST_VAR}"), "hello");
     assert_eq!(expand_env_vars("say $RSSHELL_TEST_VAR!"), "say hello!");
+    // SAFETY: nextest runs each test in its own process.
     unsafe {
         env::remove_var("RSSHELL_TEST_VAR");
     }
@@ -197,10 +198,12 @@ fn test_expand_env_vars_braced_undefined() {
 
 #[test]
 fn test_expand_env_vars_adjacent_text() {
+    // SAFETY: nextest runs each test in its own process.
     unsafe {
         env::set_var("RSSHELL_TEST_ADJ", "foo");
     }
     assert_eq!(expand_env_vars("${RSSHELL_TEST_ADJ}bar"), "foobar");
+    // SAFETY: nextest runs each test in its own process.
     unsafe {
         env::remove_var("RSSHELL_TEST_ADJ");
     }
@@ -208,11 +211,13 @@ fn test_expand_env_vars_adjacent_text() {
 
 #[test]
 fn test_expand_env_vars_multiple() {
+    // SAFETY: nextest runs each test in its own process.
     unsafe {
         env::set_var("RSSHELL_T1", "hello");
         env::set_var("RSSHELL_T2", "world");
     }
     assert_eq!(expand_env_vars("$RSSHELL_T1 $RSSHELL_T2"), "hello world");
+    // SAFETY: nextest runs each test in its own process.
     unsafe {
         env::remove_var("RSSHELL_T1");
         env::remove_var("RSSHELL_T2");
