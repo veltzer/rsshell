@@ -9,24 +9,33 @@ use serde::Deserialize;
 /// Shell configuration loaded from config file.
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
+    /// The `[prompt]` section: what the prompt shows.
     #[serde(default)]
     pub prompt: PromptConfig,
+    /// The `[history]` section: what the history keeps.
     #[serde(default)]
     pub history: HistoryConfig,
+    /// The `[aliases]` section: alias name to the command it stands for.
     #[serde(default)]
     pub aliases: HashMap<String, String>,
+    /// The `[env]` section: variables set in the shell's environment at startup.
     #[serde(default)]
     pub env: HashMap<String, String>,
+    /// The `[startup]` section: commands run when the shell starts.
     #[serde(default)]
     pub startup: StartupConfig,
 }
 
+/// The `[prompt]` section of the configuration.
 #[derive(Debug, Deserialize)]
 pub struct PromptConfig {
+    /// The pieces the prompt is made of, in order.
     #[serde(default = "default_prompt_parts")]
     pub parts: Vec<PromptPart>,
+    /// Whether a failed command's exit code is shown in the next prompt.
     #[serde(default)]
     pub show_exit_code: bool,
+    /// The color the exit code is shown in.
     #[serde(default = "default_exit_code_color")]
     pub exit_code_color: String,
 }
@@ -90,13 +99,18 @@ fn default_exit_code_color() -> String {
     "red".to_owned()
 }
 
+/// One piece of the prompt: a text and how it is drawn.
 #[derive(Debug, Deserialize, Clone)]
 pub struct PromptPart {
+    /// The text, where `{user}`, `{cwd}` and the other prompt variables are expanded.
     pub text: String,
+    /// Foreground color name; `none` leaves the terminal's own.
     #[serde(default = "default_color")]
     pub color: String,
+    /// Background color name; `none` leaves the terminal's own.
     #[serde(default = "default_color")]
     pub bg: String,
+    /// Bold, dim, italic and the line decorations.
     #[serde(flatten)]
     pub style: PartStyle,
 }
@@ -104,12 +118,16 @@ pub struct PromptPart {
 /// Text attributes of a prompt part.
 #[derive(Debug, Deserialize, Clone, Copy, Default)]
 pub struct PartStyle {
+    /// Draw the part in bold.
     #[serde(default)]
     pub bold: bool,
+    /// Draw the part dimmed.
     #[serde(default)]
     pub dim: bool,
+    /// Draw the part in italics.
     #[serde(default)]
     pub italic: bool,
+    /// Underline and strikethrough.
     #[serde(flatten)]
     pub lines: PartLines,
 }
@@ -117,8 +135,10 @@ pub struct PartStyle {
 /// Line decorations of a prompt part.
 #[derive(Debug, Deserialize, Clone, Copy, Default)]
 pub struct PartLines {
+    /// Underline the part.
     #[serde(default)]
     pub underline: bool,
+    /// Strike the part through.
     #[serde(default)]
     pub strikethrough: bool,
 }
@@ -127,12 +147,16 @@ fn default_color() -> String {
     "none".to_owned()
 }
 
+/// The `[history]` section of the configuration.
 #[derive(Debug, Deserialize)]
 pub struct HistoryConfig {
+    /// How many commands the history keeps.
     #[serde(default = "default_max_entries")]
     pub max_entries: usize,
+    /// Do not record a command that repeats the one before it.
     #[serde(default = "default_true")]
     pub ignore_duplicates: bool,
+    /// Do not record a command that starts with a space.
     #[serde(default = "default_true")]
     pub ignore_space: bool,
 }
@@ -155,8 +179,10 @@ const fn default_true() -> bool {
     true
 }
 
+/// The `[startup]` section of the configuration.
 #[derive(Debug, Deserialize, Default)]
 pub struct StartupConfig {
+    /// Commands run, in order, when the shell starts.
     #[serde(default)]
     pub commands: Vec<String>,
 }
@@ -385,20 +411,35 @@ pub fn colorize_simple(text: &str, color: &str, bold: bool) -> String {
 
 /// Collected prompt variables, computed once per prompt render.
 pub struct PromptVars {
+    /// `{user}`: the login name, from `$USER`.
     pub user: String,
+    /// `{host}`: the machine's host name.
     pub host: String,
+    /// `{cwd}`: the working directory, with the home directory written as `~`.
     pub cwd: String,
+    /// `{cwd_basename}`: the last component of the working directory.
     pub cwd_basename: String,
+    /// `{git_branch}`: the current branch; empty outside a git repository.
     pub git_branch: String,
+    /// `{git_dirty}`: `clean` or `dirty`; empty outside a git repository.
     pub git_dirty: String,
+    /// `{git_status}`: `*` when the work tree is dirty, otherwise empty.
     pub git_status: String,
+    /// `{git_sha}`: the full commit hash of HEAD; empty outside a git repository.
     pub git_sha: String,
+    /// `{git_sha_short}`: the abbreviated commit hash of HEAD.
     pub git_sha_short: String,
+    /// `{git_repo}`: the name of the repository's top directory.
     pub git_repo: String,
+    /// `{date}`: today's date.
     pub date: String,
+    /// `{time}`: the time of day.
     pub time: String,
+    /// `{shell}`: the shell's name, `rsshell`.
     pub shell: String,
+    /// `{newline}`: a line break.
     pub newline: String,
+    /// `{dollar}`: a literal `$`.
     pub dollar: String,
 }
 
@@ -491,6 +532,7 @@ impl PromptVars {
         }
     }
 
+    /// Replace every `{name}` prompt variable in `text` with its value.
     #[must_use]
     pub fn expand(&self, text: &str) -> String {
         text.replace("{user}", &self.user)
@@ -683,11 +725,17 @@ pub fn expand_history(input: &str, history: &[&str]) -> Result<String, String> {
 /// Parsed I/O redirections for a command.
 #[derive(Debug, Default)]
 pub struct Redirections {
+    /// File that standard input is read from (`< file`).
     pub stdin_file: Option<String>,
+    /// File that standard output is written to (`> file` or `>> file`).
     pub stdout_file: Option<String>,
+    /// Append to the standard output file instead of truncating it (`>>`).
     pub stdout_append: bool,
+    /// File that standard error is written to (`2> file` or `2>> file`).
     pub stderr_file: Option<String>,
+    /// Append to the standard error file instead of truncating it (`2>>`).
     pub stderr_append: bool,
+    /// Send standard error wherever standard output goes (`2>&1`).
     pub stderr_to_stdout: bool,
 }
 

@@ -1,3 +1,5 @@
+//! rsshell: Shell written in Rust.
+
 use std::collections::HashMap;
 
 use clap::{CommandFactory, Parser, Subcommand};
